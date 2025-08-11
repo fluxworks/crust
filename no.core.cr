@@ -187,7 +187,16 @@ Type: Taken
     /*
     Took data. */  Took( <Type as Taken>::Took ),
 }
-
+/// Used for immutable dereferencing operations, like `*v`.
+#[const_trait] #[lang = "deref"] pub trait Dereferences:Points
+{
+    /// The resulting type after dereferencing.
+    #[lang = "deref_target"] type Reference: ?As;
+    /// Dereferences the value.
+    #[must_use] fn dereference( &self ) -> &Self::Reference;
+}
+/*
+*/
 #[lang = "start"] fn start<T>(_main: fn() -> T, _argc: isize, _argv: *const *const u8, _: u8) -> isize
 {
     unsafe
