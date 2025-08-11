@@ -10,6 +10,7 @@
     fundamental,
     lang_items,
     negative_impls,
+    never_type,
     rustc_attrs,
     no_core,
 )]
@@ -177,6 +178,14 @@ Type:The + Takes<Type>
     fn take( &self ) -> Type { self.the() }
     fn clone_into( &self, target: &mut Type ) { target.this( self ); }
 }
+/// Used for immutable dereferencing operations, like `*v`.
+#[const_trait] #[lang = "deref"] pub trait Dereferences:Points
+{
+    /// The resulting type after dereferencing.
+    #[lang = "deref_target"] type Reference: ?As;
+    /// Dereferences the value.
+    #[must_use] fn dereference( &self ) -> &Self::Reference;
+}
 /*
 Smart pointer, indicating relegated ownership.  */
 pub enum Own<'a, Type: ?As + 'a> where
@@ -187,14 +196,61 @@ Type: Taken
     /*
     Took data. */  Took( <Type as Taken>::Took ),
 }
-/// Used for immutable dereferencing operations, like `*v`.
-#[const_trait] #[lang = "deref"] pub trait Dereferences:Points
+
+impl<Type: ?As + Taken> Dereferences for Own<'_, Type> where
+Type::Took: Takes<Type>
 {
-    /// The resulting type after dereferencing.
-    #[lang = "deref_target"] type Reference: ?As;
-    /// Dereferences the value.
-    #[must_use] fn dereference( &self ) -> &Self::Reference;
+    type Reference = Type;
+
+    fn dereference(&self) -> &Type
+    {
+        match *self 
+        {
+            Own::Taken( ref taken ) => taken,
+            Own::Took( ref took ) => took.take(),
+        }
+    }
 }
+
+#[lang = "not"] pub trait Nots
+{
+    /// The resulting type after applying the `!` operator.
+    type Type;
+    /// Performs the unary `!` operation.
+    fn not(self) -> Self::Type;
+}
+
+impl Nots for bool
+{
+    type Type = bool;
+    #[inline] fn not(self) -> bool { false }
+}
+
+impl Nots for !
+{
+    type Type = !;
+    #[inline] fn not(self) -> ! { match self {} }
+}
+
+
+/// Trait for comparisons using the equality operator.
+#[lang = "eq"] pub trait Compares<With: Points = Self>:Points
+{
+    /// Tests for `self` and `other` values to be equal, and is used by `==`.
+    #[must_use] fn compare( &self, with:&With ) -> bool;
+    /*
+    Tests for `!=`. The default implementation is almost always sufficient,
+    and should not be overridden without very good reason. */
+    #[inline] #[must_use] fn unequal( &self, other:&With ) -> bool { !self.compare( other ) }
+}
+
+/// Derive macro generating an impl of the trait [`PartialEq`].
+/// The behavior of this macro is described in detail [here](PartialEq#derivable).
+#[rustc_builtin_macro]
+pub macro PartialEq($item:item) {}
+/*
+impl<Type: ?As> Equality for Own<'_, Type> where 
+Type: Equal + Taken {} */
 /*
 */
 #[lang = "start"] fn start<T>(_main: fn() -> T, _argc: isize, _argv: *const *const u8, _: u8) -> isize
