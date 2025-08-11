@@ -17,7 +17,7 @@
 #![allow
 (
     internal_features,
-    missing_abi,
+    missing_abi,    
     unused_unsafe,
 )]
 
@@ -37,8 +37,51 @@ This | UnsafeCell
 That | PhantomData
 These
 Those
+Takes | Borrow
 */
+/// Constructs parameters for the other string-formatting macros.
+#[rustc_builtin_macro] #[macro_export] macro_rules! format_args
+{
+    ($fmt:expr) => {{}};
+    ($fmt:expr, $($args:tt)*) => {{}};
+}
 
+#[macro_export] macro_rules! argue
+{
+    ($fmt:expr) => {format_args!($fmt)};
+    ($fmt:expr, $($args:tt)*) => {format_args!($fmt, $($args)*)};
+}
+/// A trait for borrowing data.
+pub trait Takes<Type: ?As> 
+{
+    fn take(&self) -> &Type;
+}
+/**
+An identity function that causes an `unused_must_use` warning to be triggered,
+if the given value is not used by the caller. */
+#[must_use] #[inline(always)] pub const fn must_use<Type>( value:Type ) -> Type { value }
+/// A generalization of `Clone` to take data.
+pub trait Taken
+{
+    /// The resulting type after taking.
+    type Took: Takes<Self>;
+    /// Creates took data from taken data, usually by cloning.
+    fn take(&self) -> Self::Took;
+
+    /// Uses taken data to replace took data, usually by cloning.
+    fn clone_into(&self, target: &mut Self::Took)
+    {
+        *target = self.take();
+    }
+}
+
+impl<Type> Taken for Type where
+Type:The + Takes<Type>
+{
+    type Took = Type;
+    fn take( &self ) -> Type { self.the() }
+    fn clone_into( &self, target: &mut Type ) { target.this( self ); }
+}
 /// Types that may or may not have a size.
 #[rustc_specialization_trait] #[rustc_deny_explicit_impl] #[rustc_do_not_implement_via_object] #[rustc_coinductive] #[fundamental] #[lang = "pointee_sized"] 
 pub trait PointeeSized {}
