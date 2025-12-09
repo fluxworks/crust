@@ -170,16 +170,15 @@ pub mod gen
     use ::
     {
         collections::{HashMap, HashSet},
+        lexer::{ Tokens },
+        parser::{ Data, Node, Parse, Statement },
         sync::{ atomic },
         *,
     };
     /*
-    use crate::lexer::Tokens;
-    use crate::parser::{DataType, Node, Parse, StmtType};
-    use std::collections::{HashMap, HashSet};
-    use std::sync::atomic;
     */
     static LABEL_COUNTER: atomic::AtomicUsize = atomic::AtomicUsize::new(0);
+
     fn gen_labels(prefix: &str) -> String 
     {
         let label_counter = LABEL_COUNTER.fetch_add(1, atomic::Ordering::SeqCst);
@@ -343,15 +342,15 @@ pub mod gen
     {
         let p = "        ".to_string();
 
-        // iter every function node
+
         let mut prog_body = String::new();
         let index_map: HashMap<String, isize> = HashMap::new();
         let mut global_variable_scope: HashSet<String> = HashSet::new();
         let idx: isize = 0;
         for it in tree.child.iter() {
             match &it.entry {
-                Node::Declare(var_name, DataType::I64) => {
-                    // record it in the scope, index_map,
+                Node::Declare(var_name, Data::I64) => {
+
                     global_variable_scope.insert(var_name.to_string());
                     if it.child.is_empty() {
                         prog_body.push_str(&format!("{}.comm {}, 8, 8\n", p, var_name,))
@@ -369,30 +368,30 @@ pub mod gen
                         ));
                     }
                 }
-                Node::Declare(var_name, DataType::Arr64(len)) => {
+                Node::Declare(var_name, Data::Arr64(len)) => {
                     global_variable_scope.insert(var_name.to_string());
                     prog_body.push_str(&format!("{}.comm {}, {}, 32\n", p, var_name, len * 8));
                 }
                 Node::Fn(fn_name, var_list_opt) => {
                     let fn_prologue = gen_fn_prologue(fn_name);
                     let fn_epilogue = gen_fn_epilogue();
-                    // cause in function, we have to pass the offset of argument and scope contains argument
-                    // to function body
+
+
                     let call_by_function = true;
                     let mut index_map: HashMap<String, isize> = HashMap::new();
                     let mut scope: HashMap<String, bool> = HashMap::new();
                     match var_list_opt {
                         Some(var_list) => {
-                            let mut param_offset = 16 + (var_list.len() as isize - 6 - 1) * 8; // EBP + 16 (old EBP at 0, return address at 8)
+                            let mut param_offset = 16 + (var_list.len() as isize - 6 - 1) * 8;
                             for i in 0..var_list.len() {
                                 scope.insert(var_list[i].to_string(), true);
                                 if i >= 6 {
-                                    // this is stored in stack, starting from EBP + 16
+
                                     index_map.insert(var_list[i].to_string(), param_offset);
                                     param_offset -= 8;
                                 } else {
-                                    // stored in regs, we use offset from 0-5 as index to regs.
-                                    // and use (i+1)*-8 as their index, cause we will push them one by one at the new frame stack
+
+
                                     index_map.insert(var_list[i].to_string(), -(i as isize + 1) * 8);
                                 }
                             }
@@ -463,7 +462,7 @@ pub mod gen
     (
         tree: &Parse,
         index_map: &HashMap<String, isize>,
-        scope: &HashMap<String, bool>, // 1 -> function argument, 0 -> local variables
+        scope: &HashMap<String, bool>,
         idx: isize,
         lbb: &str,
         leb: &str,
@@ -472,7 +471,7 @@ pub mod gen
         global_variable_scope: &HashSet<String>,
     ) -> (HashMap<String, isize>, HashMap<String, bool>, isize, String) 
     {
-        // println!("in gen_declare with {:?}", tree.entry);
+
         let p = "        ";
         let mut index_map = index_map.clone();
         let mut scope = scope.clone();
@@ -484,9 +483,9 @@ pub mod gen
                     Some(flag) => {
                         match flag {
                             true => {
-                                // this variable is in scope, but was passed by function argument, so just shallow it
+
                                 scope.insert(var_name.to_string(), false);
-                                // println!("scope after insert: {:?}", scope);
+
                                 index_map.insert(var_name.to_string(), idx - 8);
                                 idx -= 8;
                             }
@@ -499,19 +498,19 @@ pub mod gen
                         }
                     }
                     None => {
-                        // not declared
+
                         scope.insert(var_name.to_string(), false);
-                        // println!("scope after insert: {:?}", scope);
+
                         index_map.insert(var_name.to_string(), idx - 8);
                         idx -= 8;
                     }
                 }
 
-                // judge whether it's initialized
+
                 let mut e1 = String::new();
 
                 if tree.child.is_empty() {
-                    // just declare, we initialized it with 0
+
                     e1 = format!("        movq $0, %rax\n");
                 } else {
                     e1 = gen_stmt(
@@ -550,10 +549,10 @@ pub mod gen
 
         let mut index_map = index_map.clone();
         let mut idx: isize = idx;
-        // now in a new block now
+
         let mut scope: HashMap<String, bool> = HashMap::new();
         match tree.entry {
-            Node::Stmt(StmtType::ForDecl) => {
+            Node::Stmt(Statement::ForDecl) => {
                 let (index_map_new, scope_new, idx_new, init) = gen_declare(
                     tree.child.get(0).unwrap(),
                     &index_map,
@@ -599,22 +598,25 @@ pub mod gen
                     false,
                     &global_variable_scope,
                 );
-                //           generate init (declare)
-                // BEGN_LOOP:
-                //           generate condition
-                //           cmpq $0, %rax
-                //           je  END_LOOP
-                //           generate statement
-                //           pos-expression
-                //           jmp BEGIN_LOOP
-                // END_LOOP:
-                //let b_deallocate = 8 * scope.len();
-                let mut b_deallocate = 0;
-                for (_, val) in scope.iter() {
+
+
+
+
+
+
+
+
+
+                //let deblock = 8 * scope.len();
+                let mut deblock = 0;
+                
+                for (_, val) in scope.iter()
+                {
                     if *val == false {
-                        b_deallocate += 8;
+                        deblock += 8;
                     }
                 }
+
                 format!(
                     "{}\
                     {}:\n\
@@ -638,10 +640,10 @@ pub mod gen
                     label_begin_loop,
                     label_end_loop,
                     p,
-                    b_deallocate
+                    deblock
                 )
             }
-            Node::Stmt(StmtType::For) => {
+            Node::Stmt(Statement::For) => {
                 let init = gen_stmt(
                     tree.child.get(0).unwrap(),
                     &index_map,
@@ -683,20 +685,20 @@ pub mod gen
                     false,
                     &global_variable_scope,
                 );
-                //           generate init
-                // BEGN_LOOP:
-                //           generate condition
-                //           cmpq $0, %rax
-                //           je  END_LOOP
-                //           generate statement
-                //           pos-expression
-                //           jmp BEGIN_LOOP
-                // END_LOOP:
-                // let b_deallocate = 8 * scope.len();
-                let mut b_deallocate = 0;
+
+
+
+
+
+
+
+
+
+
+                let mut deblock = 0;
                 for (_, val) in scope.iter() {
                     if *val == false {
-                        b_deallocate += 8;
+                        deblock += 8;
                     }
                 }
                 format!(
@@ -722,13 +724,13 @@ pub mod gen
                     label_begin_loop,
                     label_end_loop,
                     p,
-                    b_deallocate
+                    deblock
                 )
             }
             _ => panic!("Something wrong in gen_for"),
         }
     }
-    // gen_block() - into a new block, will have empty scope
+
     pub fn gen_block(
         tree: &Parse,
         index_map: &HashMap<String, isize>,
@@ -740,10 +742,10 @@ pub mod gen
         fn_def: bool,
         global_variable_scope: &HashSet<String>,
     ) -> String {
-        let p = "        ".to_string(); // 8 white spaces
+        let p = "        ".to_string();
         let label_begin_block = gen_labels("BB");
         let label_end_block = gen_labels("EB");
-        // iter every block
+
         let mut stmts = String::new();
         let mut index_map = index_map.clone();
         let mut idx: isize = idx;
@@ -751,9 +753,9 @@ pub mod gen
         if fn_def == false {
             current_scope = HashMap::new();
         } else {
-            // this is a function definition block
-            // we need to store the input argument in the stack
-            // first push them in stack
+
+
+
             let regs: Vec<&'static str> = vec!["%rdi", "%rsi", "%rdx", "%rcx", "%r8", "%r9"];
             if current_scope.len() > 6 {
                 for i in 0..6 {
@@ -764,14 +766,14 @@ pub mod gen
                     stmts.push_str(&format!("{}pushq {}\n", p, regs[i]));
                 }
             }
-            // XXX: cause right now the generated will use small amout of registers,
-            // but in the future will need to save callee-saved registers in the function stack
+
+
         }
 
         for it in &tree.child {
-            // iter through every block-item
+
             match &it.entry {
-                Node::Declare(_var_name, DataType::I64) => {
+                Node::Declare(_var_name, Data::I64) => {
                     let (index_map_new, scope_new, idx_new, s) = gen_declare(
                         it,
                         &index_map,
@@ -788,7 +790,7 @@ pub mod gen
                     current_scope = scope_new.clone();
                     stmts.push_str(&s);
                 }
-                Node::Stmt(StmtType::Compound) => {
+                Node::Stmt(Statement::Compound) => {
                     stmts.push_str(&gen_block(
                         it,
                         &index_map,
@@ -797,7 +799,7 @@ pub mod gen
                         loop_in_label,
                         loop_out_label,
                         true,
-                        false, // call by  function not true
+                        false,
                         &global_variable_scope,
                     ));
                 }
@@ -816,10 +818,10 @@ pub mod gen
                 }
             }
         }
-        let mut b_deallocate = 0;
+        let mut deblock = 0;
         for (_, val) in current_scope.iter() {
             if *val == false {
-                b_deallocate += 8;
+                deblock += 8;
             }
         }
 
@@ -828,7 +830,7 @@ pub mod gen
             {}\
             {}:\n\
             {}addq ${}, %rsp # block out\n",
-            label_begin_block, stmts, label_end_block, p, b_deallocate
+            label_begin_block, stmts, label_end_block, p, deblock
         )
     }
 
@@ -836,27 +838,27 @@ pub mod gen
         tree: &Parse,
         index_map: &HashMap<String, isize>,
         idx: isize,
-        lbb: &str, // label_begin_block
-        leb: &str, // label_end_block
+        lbb: &str,
+        leb: &str,
         loop_in_label: Option<&str>,
         loop_out_label: Option<&str>,
         global_variable_scope: &HashSet<String>,
     ) -> String {
         let p = "        ".to_string();
-        // first judge whether it is a global variable or local variable
+
         match &tree.entry {
             Node::ArrayRef(var_name) => {
                 match index_map.get(var_name) {
                     Some(c) => {
-                        // local array
+
                         panic!(format!("Error: address to local array not implemented"));
                     }
                     None => {
-                        // not local but should check in global variable scope
+
                         match global_variable_scope.contains(var_name) {
                             true => {
-                                // address of array[exp]
-                                // should generate exp -> rax
+
+
                                 let get_index = gen_stmt(
                                     tree.child
                                         .get(0)
@@ -869,10 +871,10 @@ pub mod gen
                                     loop_out_label,
                                     &global_variable_scope,
                                 );
-                                //                get index => rax
-                                //        leaq    0(,%rax,8), %rdx
-                                //        movq    a@GOTPCREL(%rip), %rax
-                                //        addq    %rdx, %rax
+
+
+
+
                                 format!(
                                     "{}\
                                     {}pushq %rdx\n\
@@ -893,13 +895,13 @@ pub mod gen
             Node::Var(name) => {
                 match index_map.get(name) {
                     Some(c) => {
-                        // local variable
-                        format!("{}leaq {}(%rbp), %rax\n", p, c) // put address in rax
+
+                        format!("{}leaq {}(%rbp), %rax\n", p, c)
                     }
                     None => {
-                        // not local but should check in global
+
                         if global_variable_scope.contains(name) {
-                            // ok
+
                             format!("{}movq {}@GOTPCREL(%rip), %rax\n", p, name)
                         } else {
                             panic!(format!("Using address operator against an undeclared variable `{}`", name));
@@ -928,13 +930,13 @@ pub mod gen
         tree: &Parse,
         index_map: &HashMap<String, isize>,
         idx: isize,
-        lbb: &str, // label_begin_block
-        leb: &str, // label_end_block
+        lbb: &str,
+        leb: &str,
         loop_in_label: Option<&str>,
         loop_out_label: Option<&str>,
         global_variable_scope: &HashSet<String>,
     ) -> String {
-        let p = "        ".to_string(); // 8 white spaces
+        let p = "        ".to_string();
         match &tree.entry {
             Node::StringLiteral(data, tag) => format!(
                 "{}.section .rodata\n\
@@ -946,7 +948,7 @@ pub mod gen
             ),
             Node::ConditionalExp => {
                 if tree.child.len() == 1 {
-                    // just one <logical-or-exp>
+
                     gen_stmt(
                         tree.child
                             .get(0)
@@ -960,7 +962,7 @@ pub mod gen
                         &global_variable_scope,
                     )
                 } else if tree.child.len() == 3 {
-                    // <logical-or-exp> "?" <exp> ":" <conditional-exp>
+
                     let e1_as = gen_stmt(
                         tree.child.get(0).expect("Conditional expression no e1"),
                         index_map,
@@ -1010,23 +1012,23 @@ pub mod gen
                 }
             }
             Node::FnCall(fn_name) => {
-                // now change to x64 calling convetion
-                // arguments: 1st 2nd 3rd 4th 5th 6th ...
-                //            rdi rsi rdx rcx r8  r9  stack
-                // iter every expression in reverse direction
-                // and then push them in stack
-                let mut s: String = String::new();
-                // should follow AMD System V ABI,
-                // The begin of main function stack is aligned 8,
-                // And end of the input argument area shall be aligned on a 16 (32, if __m256 is passed on stack) byte boundary.
-                // so if we have n local variables, we pushed them into the stack.
-                // and we need to store r10 and r11, and we should put argument with index bigger than 6 into stack
-                // so the total element pushed into stack should be (n + 2 + (arg_list.len() - 6 > 0 ? arg_list.len() - 6 : 0))
-                // if this value % 2 == 1, then we should push one element into stack.
-                // Now I only handled this in main function, and I should also track the stack align for every function that we defined,
-                // so we can make sure every function follows the ABI
 
-                // first judge whether we need to push one extra element into stack
+
+
+
+
+                let mut s: String = String::new();
+
+
+
+
+
+
+
+
+
+
+
                 let tmp = match tree.child.len() {
                     0...6 => 0,
                     _ => tree.child.len() - 6,
@@ -1041,15 +1043,14 @@ pub mod gen
                 };
 
                 if extra == true {
-                    // then we need to add one element to stack to make sure follow the abi
+
                     s.push_str(&format!("{}pushq $0\n", p));
                 }
-
-                //then save the caller saves regs: r10, r11
+                
                 s.push_str(&format!("{}pushq %r10\n", p));
                 s.push_str(&format!("{}pushq %r11\n", p));
 
-                // mov argument into registers or stack if it's 7th element or later argument
+
                 let regs: Vec<&'static str> = vec!["%rdi", "%rsi", "%rdx", "%rcx", "%r8", "%r9"];
                 for i in 0..tree.child.len() {
                     s.push_str(&gen_stmt(
@@ -1063,19 +1064,19 @@ pub mod gen
                         &global_variable_scope,
                     ));
                     if i >= 6 {
-                        // store in stack
+
                         s.push_str(&format!("{}pushq %rax\n", p));
                     } else {
-                        // store into regs.
+
                         s.push_str(&format!(
                             "{}movq %rax, {}\n{}movq $0, %rax\n",
                             p, regs[i], p
                         ));
                     }
                 }
-                // call the function
+
                 s.push_str(&format!("{}call {}@PLT\n", p, fn_name));
-                // after the callee function returns, remove the arguments from stack
+
                 if tree.child.len() > 6 {
                     s.push_str(&format!(
                         "{}addq ${}, %rsp # remove the arguments\n",
@@ -1092,7 +1093,7 @@ pub mod gen
                 s
             }
             Node::Stmt(stmt) => match stmt {
-                StmtType::Return => format!(
+                Statement::Return => format!(
                     "{}\
                     {}\
                     {}ret\n",
@@ -1109,7 +1110,7 @@ pub mod gen
                     gen_fn_epilogue(),
                     p
                 ),
-                StmtType::Conditional(_) => {
+                Statement::Conditional(_) => {
                     let e1_as = gen_stmt(
                         tree.child.get(0).expect("Conditional node no e1"),
                         index_map,
@@ -1158,7 +1159,7 @@ pub mod gen
                         e1_as, p, p, label_s2, s1_as, p, label_end, label_s2, s2_as, label_end,
                     )
                 }
-                StmtType::Exp => gen_stmt(
+                Statement::Exp => gen_stmt(
                     tree.child.get(0).expect("Statement Node no child"),
                     index_map,
                     idx,
@@ -1168,24 +1169,24 @@ pub mod gen
                     loop_out_label,
                     &global_variable_scope,
                 ),
-                StmtType::Continue => match loop_in_label {
+                Statement::Continue => match loop_in_label {
                     Some(l) => format!("{}jmp {} # Continue\n", p, l),
                     None => panic!("Continue should be in the loop scope"),
                 },
-                StmtType::Break => match loop_out_label {
+                Statement::Break => match loop_out_label {
                     Some(l) => format!("{}jmp {} # Break\n", p, l),
                     None => panic!("Break shoule be in the loop scope"),
                 },
-                StmtType::For | StmtType::ForDecl => {
+                Statement::For | Statement::ForDecl => {
                     gen_for(tree, index_map, idx, &global_variable_scope)
                 }
-                StmtType::Do => {
-                    // LBB.
-                    // stmt
-                    // exp
-                    // cmpq $1, %rax
-                    // je  LBB
-                    // LEB
+                Statement::Do => {
+
+
+
+
+
+
                     let lbb = gen_labels("BDO");
                     let leb = gen_labels("EDO");
                     let scope: HashMap<String, bool> = HashMap::new();
@@ -1199,7 +1200,7 @@ pub mod gen
                         true,
                         false,
                         &global_variable_scope,
-                    ); // should enter a new scope
+                    );
                     let exp = gen_stmt(
                         tree.child.get(1).unwrap(),
                         index_map,
@@ -1220,14 +1221,14 @@ pub mod gen
                         lbb, stmts, exp, p, p, lbb, leb
                     )
                 }
-                StmtType::While => {
-                    // LBB.
-                    // exp
-                    // cmpq $1, %rax
-                    // jne LEB
-                    // stmt
-                    // jmp LBB
-                    // LEB.
+                Statement::While => {
+
+
+
+
+
+
+
                     let lbb = gen_labels("BWHILE");
                     let leb = gen_labels("EWHILE");
                     let scope: HashMap<String, bool> = HashMap::new();
@@ -1251,7 +1252,7 @@ pub mod gen
                         true,
                         false,
                         &global_variable_scope,
-                    ); // should enter a new scope
+                    );
                     format!(
                         "{}:\n\
                         {}\
@@ -1263,7 +1264,7 @@ pub mod gen
                         lbb, exp, p, p, leb, stmts, p, lbb, leb
                     )
                 }
-                StmtType::Compound => {
+                Statement::Compound => {
                     let scope: HashMap<String, bool> = HashMap::new();
                     gen_block(
                         tree,
@@ -1291,9 +1292,9 @@ pub mod gen
                     loop_out_label,
                     &global_variable_scope,
                 );
-                // get index => rdx,
-                // movq array_index var@GOTPCREL(%rip) => %rbx
-                // movq (%rbx, rdx, data size), %rax
+
+
+
                 format!(
                     "{}\
                     {}pushq %rdx\n\
@@ -1309,10 +1310,10 @@ pub mod gen
             Node::AssignNode(var_name, true) => {
                 match index_map.get(var_name) {
                     None => {
-                        // not in current scope, try to search global scope
+
                         match global_variable_scope.contains(var_name) {
                             true => {
-                                // declared in global scope, that's ok
+
                                 let get_index = gen_stmt(
                                     tree.child
                                         .get(0)
@@ -1335,10 +1336,10 @@ pub mod gen
                                     loop_out_label,
                                     &global_variable_scope,
                                 );
-                                // movq array_index var@GOTPCREL(%rip) => %rbx
-                                // get index => rdx,
-                                // get res => rax
-                                // movq %rax, (%rbx, rdx, data size)
+
+
+
+
                                 format!(
                                     "{}\
                                     {}movq %rax, %rdx\n\
@@ -1349,13 +1350,13 @@ pub mod gen
                                 )
                             }
                             false => {
-                                // Not declared before, that's not ok
+
                                 panic!("Error: Use un-declared variable `{}`", var_name)
                             }
                         }
                     }
                     Some(t) => {
-                        // declared before, that's ok
+
                         let e1 = gen_stmt(
                             tree.child
                                 .get(0)
@@ -1385,13 +1386,13 @@ pub mod gen
                 }
             }
             Node::AssignNode(var_name, false) => {
-                // assign to int variable
+
                 match index_map.get(var_name) {
                     None => {
-                        // not in current scope, try to search global scope
+
                         match global_variable_scope.contains(var_name) {
                             true => {
-                                // declared in global scope, that's ok
+
                                 let e1 = gen_stmt(
                                     tree.child
                                         .get(0)
@@ -1411,13 +1412,13 @@ pub mod gen
                                 )
                             }
                             false => {
-                                // Not declared before, that's not ok
+
                                 panic!("Error: Use un-declared variable `{}`", var_name)
                             }
                         }
                     }
                     Some(t) => {
-                        // declared before, that's ok
+
                         let e1 = gen_stmt(
                             tree.child
                                 .get(0)
@@ -1448,7 +1449,7 @@ pub mod gen
             }
             Node::UnExp(op) => match op {
                 Tokens::Addr => format!(
-                    // put address of the factor in %rax
+
                     "{}", gen_addr(
                         tree.child.get(0).expect("Addressing node no child"),
                         index_map,
@@ -1550,8 +1551,8 @@ pub mod gen
                         {}pushq %rax\n\
                         {}\
                         {}popq %rcx\n\
-                        {}subq %rcx, %rax\n", // subl src, dst : dst - src -> dst
-                        //   let %rax = dst = e1, %rcx = src = e2
+                        {}subq %rcx, %rax\n",
+
                         gen_stmt(
                             tree.child.get(1).expect("BinExp has no rhs"),
                             index_map,
@@ -1613,7 +1614,7 @@ pub mod gen
                         {}popq %rcx\n\
                         {}xorq %rdx, %rdx\n\
                         {}idivq %rcx\n",
-                        // let eax = e1, edx = 0, ecx = e2
+
                         gen_stmt(
                             tree.child.get(1).expect("BinExp has no rhs"),
                             index_map,
@@ -1952,10 +1953,10 @@ pub mod gen
                         format!("{}movq {}(%rbp), %rax\n", p, var_offset)
                     }
                     None => {
-                        // try to search global scope
+
                         match global_variable_scope.contains(var_name) {
                             true => {
-                                // in global scope
+
                                 let var_offset = var_name;
                                 format!("{}movq {}(%rip), %rax\n", p, var_offset)
                             }
@@ -1979,8 +1980,8 @@ pub mod gen
                         &global_variable_scope,
                     )
                 } else {
-                    // null exp
-                    // movq 1, %rax
+
+
                     format!("{}movq $1, %rax\n", p)
                 }
             }
@@ -2025,174 +2026,185 @@ pub mod lexer
     #[derive(Eq, PartialEq, Clone, Debug)]
     pub enum Keyword 
     {
-        Int,      // int
-        Void,     // void
-        Ret,      // return
-        If,       // if
-        Else,     // else
-        While,    // while
-        For,      // for
-        Do,       // do
-        Break,    // break
-        Continue, // continue
+        Int,
+        Void,
+        Ret,
+        If,
+        Else,
+        While,
+        For,
+        Do,
+        Break,
+        Continue,
     }
 
     #[derive(Eq, PartialEq, Clone, Debug)]
     pub enum Tokens 
     {
         Kwd(Keyword),
-        LBrace,             // {
-        RBrace,             // }
-        LParen,             // (
-        RParen,             // )
-        LBracket,           // [
-        RBracket,           // ]
-        Semicolon,          // ;
-        Assign,             // =
-        Lt,                 // <
-        Gt,                 // >
-        Minus,              // -
-        Tilde,              // ~
-        Exclamation,        // !
-        Plus,               // +
-        Multi,              // *
-        Splash,             // /
-        Literal(i64),       // [0-9]+
-        Identifier(String), // identifier
-        And,                // &&
-        Or,                 // ||
-        Equal,              // ==
-        NotEqual,           // !=
-        LessEqual,          // <=
-        GreaterEqual,       // >=
-        Colon,              // :
-        QuestionMark,       // ?
-        Comma,              // ,
+        LBrace,
+        RBrace,
+        LParen,
+        RParen,
+        LBracket,
+        RBracket,
+        Semicolon,
+        Assign,
+        Lt,
+        Gt,
+        Minus,
+        Tilde,
+        Exclamation,
+        Plus,
+        Multi,
+        Splash,
+        Literal(i64),
+        Identifier(String),
+        And,
+        Or,
+        Equal,
+        NotEqual,
+        LessEqual,
+        GreaterEqual,
+        Colon,
+        QuestionMark,
+        Comma,
         String(String, String),
-        Addr,               // &var
+        Addr,
     }
 
     static mut LABEL_COUNTER: i64 = -1;
-    fn gen_string_tag() -> String {
-        unsafe {
+    fn gen_string_tag() -> String
+    {
+        unsafe
+        {
             LABEL_COUNTER = LABEL_COUNTER + 1;
             return format!(".LSTR{}", LABEL_COUNTER);
         }
     }
-    pub fn lex(input: &str) -> Result<Vec<Tokens>, String> {
-        let mut result = Vec::new();
 
+    pub fn lex(input: &str) -> Result<Vec<Tokens>, String> 
+    {
+        let mut result = Vec::new();
         let mut it = input.chars().peekable();
 
-        while let Some(&c) = it.peek() {
-            match c {
-                '"' => {
+        while let Some(&c) = it.peek()
+        {
+            match c
+            {
+                '"' =>
+                {
                     it.next();
                     let mut s = "".to_string();
-                    loop {
+                    
+                    loop
+                    {
                         let &c = it.peek().unwrap();
-                        if c == '"' {
-                            break;
-                        }
+
+                        if c == '"' { break; }
+
                         s.push(c);
                         it.next();
                     }
+
                     result.push(Tokens::String(s, gen_string_tag()));
                     it.next();
                 }
-                '\'' => {
-                    // try parse a char
-                    // now just use int to represent char
-                    // transform it to int
-                    it.next(); // skip '
+                
+                '\'' => 
+                {
+                    it.next();
                     let &c = it.peek().unwrap();
-                    if c == '\'' {
-                        return Err(format!("Error: empty character constant"));
-                    }
-                    if c == '\\' {
+
+                    if c == '\'' { return Err(format!("Error: empty character constant")); }
+
+                    if c == '\\' 
+                    {
                         it.next();
                         let &c = it.peek().unwrap();
-                        match c {
-                            'a' => {
-                                result.push(Tokens::Literal(0x07));
-                            } // Alert (Beep, Bell) (added in C89)
-                            'b' => {
-                                result.push(Tokens::Literal(0x08));
-                            } // Backspace
-                            'e' => {
-                                result.push(Tokens::Literal(0x1B));
-                            } // escape character
-                            'f' => {
-                                result.push(Tokens::Literal(0x0C));
-                            } // Formfeed Page Break
-                            'n' => {
-                                result.push(Tokens::Literal(0x0A));
-                            } // Newline (Line Feed)
-                            'r' => {
-                                result.push(Tokens::Literal(0x0D));
-                            } // Carriage Return
-                            't' => {
-                                result.push(Tokens::Literal(0x09));
-                            } // Horizontal Tab
-                            'v' => {
-                                result.push(Tokens::Literal(0x0B));
-                            } // Vertical Tab
-                            '\\' => {
-                                result.push(Tokens::Literal(0x5C));
-                            } // Backslash
-                            '\'' => {
-                                result.push(Tokens::Literal(0x27));
-                            } // Apostrophe or single quotation mark
-                            '\"' => {
-                                result.push(Tokens::Literal(0x22));
-                            } // Double quotation mark
-                            '?' => {
-                                result.push(Tokens::Literal(0x3F));
-                            } // question mark
-                            _ => {
-                                return Err(format!("unrecongnized character"));
-                            }
+
+                        match c 
+                        {
+                            'a' => { result.push(Tokens::Literal(0x07)); }
+                                
+                            'b' => { result.push(Tokens::Literal(0x08)); }
+                                
+                            'e' => { result.push(Tokens::Literal(0x1B)); }
+                                
+                            'f' => { result.push(Tokens::Literal(0x0C)); }
+                                
+                            'n' => { result.push(Tokens::Literal(0x0A)); }
+                                
+                            'r' => { result.push(Tokens::Literal(0x0D)); }
+                                
+                            't' => { result.push(Tokens::Literal(0x09)); }
+                                
+                            'v' => { result.push(Tokens::Literal(0x0B)); }
+                                
+                            '\\' => { result.push(Tokens::Literal(0x5C)); }
+                                
+                            '\'' => { result.push(Tokens::Literal(0x27)); }
+                                
+                            '\"' => { result.push(Tokens::Literal(0x22)); }
+                                
+                            '?' => { result.push(Tokens::Literal(0x3F)); }
+                            _ => { return Err(format!("unrecongnized character")); }
                         }
+                        
                         it.next();
-                        if it.peek().unwrap() != &'\'' {
-                            return Err(format!("Error: unmatched '"));
-                        }
+
+                        if it.peek().unwrap() != &'\'' { return Err(format!("Error: unmatched '")); }
+
                         it.next();
-                    } else {
+                    }
+                    
+                    else 
+                    {
                         result.push(Tokens::Literal(c as i64));
-                        it.next(); // skip char
-                        it.next(); // skip '
+                        it.next();
+                        it.next();
                     }
                 }
-                '0'...'9' => {
+                
+                '0'...'9' => 
+                {
                     it.next();
                     let mut number = c
-                        .to_string()
-                        .parse::<i64>()
-                        .expect("The caller should have passed a digit.");
+                    .to_string()
+                    .parse::<i64>()
+                    .expect("The caller should have passed a digit.");
 
-                    while let Some(Ok(digit)) = it.peek().map(|c| c.to_string().parse::<i64>()) {
+                    while let Some(Ok(digit)) = it.peek().map(|c| c.to_string().parse::<i64>()) 
+                    {
                         number = number * 10 + digit;
                         it.next();
                     }
+
                     result.push(Tokens::Literal(number));
                 }
-                'a'...'z' | 'A'...'Z' | '_' => {
+                
+                'a'...'z' | 'A'...'Z' | '_' =>
+                {
                     it.next();
                     let mut s = String::new();
                     s.push(c);
-                    while let Some(&tmp) = it.peek() {
-                        match tmp {
-                            'a'...'z' | 'A'...'Z' | '_' => {
+                    
+                    while let Some(&tmp) = it.peek()
+                    {
+                        match tmp
+                        {
+                            'a'...'z' | 'A'...'Z' | '_' =>
+                            {
                                 s.push(tmp);
                                 it.next();
                             }
-                            _ => {
-                                break;
-                            }
+
+                            _ => { break; }
                         }
                     }
-                    match s.as_ref() {
+
+                    match s.as_ref()
+                    {
                         "int" => result.push(Tokens::Kwd(Keyword::Int)),
                         "char" => result.push(Tokens::Kwd(Keyword::Int)),
                         "return" => result.push(Tokens::Kwd(Keyword::Ret)),
@@ -2207,63 +2219,90 @@ pub mod lexer
                         _ => result.push(Tokens::Identifier(s)),
                     }
                 }
-                '(' => {
+                
+                '(' =>
+                {
                     result.push(Tokens::LParen);
                     it.next();
                 }
-                ')' => {
+                
+                ')' =>
+                {
                     result.push(Tokens::RParen);
                     it.next();
                 }
-                '{' => {
+                
+                '{' =>
+                {
                     result.push(Tokens::LBrace);
                     it.next();
                 }
-                '}' => {
+                
+                '}' =>
+                {
                     result.push(Tokens::RBrace);
                     it.next();
                 }
-                '[' => {
+                
+                '[' =>
+                {
                     result.push(Tokens::LBracket);
                     it.next();
                 }
-                ']' => {
+                
+                ']' =>
+                {
                     result.push(Tokens::RBracket);
                     it.next();
                 }
-                ';' => {
+                
+                ';' =>
+                {
                     result.push(Tokens::Semicolon);
                     it.next();
                 }
-                '=' => {
+                
+                '=' =>
+                {
                     it.next();
-                    match it.peek() {
-                        Some(tmp) => match tmp {
-                            '=' => {
+                    match it.peek()
+                    {
+                        Some(tmp) => match tmp
+                        {
+                            '=' =>
+                            {
                                 result.push(Tokens::Equal);
                                 it.next();
                             }
-                            '>' => {
+                            
+                            '>' =>
+                            {
                                 result.push(Tokens::GreaterEqual);
                                 it.next();
                             }
-                            _ => {
-                                result.push(Tokens::Assign);
-                            }
+
+                            _ => { result.push(Tokens::Assign); }
                         },
                         _ => return Err(format!("Can not peek next char")),
                     }
                 }
-                '<' => {
+                
+                '<' =>
+                {
                     it.next();
-                    match it.peek() {
-                        Some(tmp) => match tmp {
-                            '=' => {
+                    match it.peek()
+                    {
+                        Some(tmp) => match tmp
+                        {
+                            '=' =>
+                            {
                                 it.next();
                                 result.push(Tokens::LessEqual);
                                 it.next();
                             }
-                            _ => {
+
+                            _ =>
+                            {
                                 result.push(Tokens::Lt);
                                 it.next();
                             }
@@ -2271,15 +2310,22 @@ pub mod lexer
                         _ => return Err(format!("Can not peek next char")),
                     }
                 }
-                '>' => {
+                
+                '>' =>
+                {
                     it.next();
-                    match it.peek() {
-                        Some(tmp) => match tmp {
-                            '=' => {
+                    match it.peek()
+                    {
+                        Some(tmp) => match tmp
+                        {
+                            '=' =>
+                            {
                                 result.push(Tokens::GreaterEqual);
                                 it.next();
                             }
-                            _ => {
+
+                            _ =>
+                            {
                                 result.push(Tokens::Gt);
                                 it.next();
                             }
@@ -2287,95 +2333,118 @@ pub mod lexer
                         _ => return Err(format!("Can not peek next char")),
                     }
                 }
-                '-' => {
+                
+                '-' =>
+                {
                     result.push(Tokens::Minus);
                     it.next();
                 }
-                '~' => {
+                
+                '~' =>
+                {
                     result.push(Tokens::Tilde);
                     it.next();
                 }
-                '!' => {
+                
+                '!' =>
+                {
                     it.next();
-                    match it.peek() {
-                        Some(tmp) => match tmp {
-                            '=' => {
+                    match it.peek()
+                    {
+                        Some(tmp) => match tmp
+                        {
+                            '=' =>
+                            {
                                 result.push(Tokens::NotEqual);
                                 it.next();
                             }
-                            _ => {
-                                result.push(Tokens::Exclamation);
-                            }
+
+                            _ => { result.push(Tokens::Exclamation); }
                         },
                         _ => return Err(format!("Can not peek next char")),
                     }
                 }
-                '+' => {
+                
+                '+' =>
+                {
                     result.push(Tokens::Plus);
                     it.next();
                 }
-                '*' => {
+                
+                '*' =>
+                {
                     result.push(Tokens::Multi);
                     it.next();
                 }
-                '/' => {
+                
+                '/' =>
+                {
                     result.push(Tokens::Splash);
                     it.next();
                 }
-                '&' => {
+                
+                '&' =>
+                {
                     it.next();
-                    match it.peek() {
-                        Some(tmp) => match tmp {
-                            '&' => {
+                    match it.peek()
+                    {
+                        Some(tmp) => match tmp
+                        {
+                            '&' =>
+                            {
                                 result.push(Tokens::And);
                                 it.next();
                             }
-                            _ => {
-                                // now don't support bitwise and, so just return Err
-                                // & operator to get the address of a variable
-                                result.push(Tokens::Addr);
-                            }
+
+                            _ => { result.push(Tokens::Addr); }
                         },
                         _ => return Err(format!("Can not peek next char")),
                     }
                 }
-                '|' => {
+                
+                '|' => 
+                {
                     it.next();
-                    match it.peek() {
-                        Some(tmp) => match tmp {
-                            '|' => {
+                    match it.peek() 
+                    {
+                        Some(tmp) => match tmp 
+                        {
+                            '|' => 
+                            {
                                 result.push(Tokens::Or);
                                 it.next();
                             }
-                            _ => {
-                                // now don't support bitwise or, so just return Err
-                                return Err(format!("unexpected token {}", c));
-                            }
+
+                            _ => { return Err(format!("unexpected token {}", c)); }
                         },
                         _ => return Err(format!("Can not peek next char")),
                     }
                 }
-                '?' => {
+                
+                '?' =>
+                {
                     result.push(Tokens::QuestionMark);
                     it.next();
                 }
-                ':' => {
+                
+                ':' =>
+                {
                     result.push(Tokens::Colon);
                     it.next();
                 }
-                ',' => {
+                
+                ',' =>
+                {
                     result.push(Tokens::Comma);
                     it.next();
                 }
-                ' ' | '\n' | '\t' | '\r' => {
-                    // skip
-                    it.next();
-                }
-                _ => {
-                    return Err(format!("unexpected character {}", c));
-                }
+
+                ' ' | '\n' | '\t' | '\r' => { it.next(); }
+
+                _ => { return Err(format!("unexpected character {}", c)); }
             }
         }
+
         Ok(result)
     }
 }
@@ -2507,58 +2576,58 @@ pub mod parser
     pub enum Node 
     {
         Prog(String),
-        // TODO: now only support int parameters
-        // <function> ::= "int" <id> "(" [ "int" <id> { "," "int" <id> } ] ")" "{" {<block-item>} "}"
+
+
         Fn(String, Option<Vec<String>>),
-        Stmt(StmtType),
-        // <statement> ::= "return" <exp> ";"
-        //               | <exp-option> ";"
-        //               | "if" "(" <exp> ")" <statement> [ "else" <statement> ]
-        //               | "{" { <block-item> } "}
-        //               | "for" "(" <exp-option> ";" <exp-option> ";" <exp-option> ")" <statement>
-        //               | "for" "(" <declaration> <exp-option> ";" <exp-option> ")" <statement>
-        //               | "while" "(" <exp> ")" <statement>
-        //               | "do" <statement> "while" <exp> ";"
-        //               | "break" ";"
-        //               | "continue" ";"
-        Block, // <block> ::= <statement> | <declaration>
+        Stmt(Statement),
+
+
+
+
+
+
+
+
+
+
+        Block,
         Const(i64),
-        StringLiteral(String, String), // data, tag
+        StringLiteral(String, String),
         Var(String),
-        ArrayRef(String),          // referencing to array
-        AssignNode(String, bool), // String -> variable name, bool -> true if this is a assign to array element
-        UnExp(lexer::Tokens),    // Unary Expression
-        BinExp(lexer::Tokens),   // Binary Operator
-        Exp,                      // <exp> ::= <id> ["[" <exp> "]"] "=" <exp> | <conditional-exp>
-        ExpOption,                // <exp-option> :: <exp> | ""
-        ConditionalExp, // <conditional-exp> ::= <logical-or-exp> [ "?" <exp> ":" <conditional-exp> ]
-        LogicalOrExp,   // <logical-or-exp> ::= <logical-and-exp> { "||" <logical-and-exp> }
-        LogicalAndExp,  // <logical-and-exp> ::= <equality-exp> { "&&" <equality-exp> }
-        EqualityExp,    // <EqualityExp> ::= <relational-exp> { ("!="|"==") <relational-exp> }
-        RelationalExp, // <relational-exp> ::= <additive-exp> { ("<" | ">" | "<=" | ">=") <additive-exp> }
-        AdditiveExp,   // <additive-exp> ::= <term> { ("+" | "-") <term> }
-        Term,          // <term> ::= <factor> { ("*" | "/") <factor> }
-        Factor, // <factor> ::= <function-call> | "(" <exp> ")" | <unary_op> <factor> | <int> | string | <id> "[" <exp> "]" | <id>
-        FnCall(String), // <function-call> ::= id "(" [ <exp> { "," <exp> } ] ")"
-        Declare(String, DataType), // <declaration> ::= "int" <id> "[" <int> "]" ";" | "int" <id> [ = <exp> ] ";"
+        ArrayRef(String),
+        AssignNode(String, bool),
+        UnExp(lexer::Tokens),
+        BinExp(lexer::Tokens),
+        Exp,
+        ExpOption,
+        ConditionalExp,
+        LogicalOrExp,
+        LogicalAndExp,
+        EqualityExp,
+        RelationalExp,
+        AdditiveExp,
+        Term,
+        Factor,
+        FnCall(String),
+        Declare(String, Data),
     }
 
     #[derive(Eq, PartialEq, Clone, Debug)]
-    pub enum DataType {
-        I64,        // now int in c was translated in 64 bits int
-        Arr64(i64), // int array[len]
+    pub enum Data {
+        I64,
+        Arr64(i64),
     }
 
     #[derive(Eq, PartialEq, Clone, Debug)]
-    pub enum StmtType {
+    pub enum Statement {
         Return,
         Exp,
         Conditional(String),
         Compound,
-        For,     // kids: exp-opion, exp-option, exp-option
-        ForDecl, // kids: declaration, exp, exp-option, statement
-        While,   // kids: exp, stmt
-        Do,      // kids: stmt, exp
+        For,
+        ForDecl,
+        While,
+        Do,
         Break,
         Continue,
     }
@@ -2581,23 +2650,23 @@ pub mod parser
     fn p_logical_or_exp(toks: &[lexer::Tokens], pos: usize) -> Result<(Parse, usize), String> {
         let mut log_or_exp_node = Parse::new();
         log_or_exp_node.entry = Node::LogicalOrExp;
-        // Parse <logical-and-exp> first
 
-        // <LogicalOrExp> -> <LogicalAndExp>
+
+
         let mut pos = pos;
         let (log_and_exp_node, tmp_pos) = r#try!(p_logical_and_exp(toks, pos));
         pos = tmp_pos;
-        // peek next node
+
         let mut tok = &toks[pos];
         pos = pos + 1;
         if *tok != lexer::Tokens::Or {
-            // only one child_node
+
             log_or_exp_node.child.push(log_and_exp_node);
             pos = pos - 1;
             return Ok((log_or_exp_node, pos));
         }
 
-        // log_or_exp -> BinExp -> (left: logAndExp, right logAndExp)
+
         let mut lhs = log_and_exp_node;
         while *tok == lexer::Tokens::Or {
             let mut binexp_node = Parse::new();
@@ -2618,16 +2687,16 @@ pub mod parser
     }
 
     fn p_conditional_exp(toks: &[lexer::Tokens], pos: usize) -> Result<(Parse, usize), String> {
-        // <conditional-exp> ::= <logical-or-exp> [ "?" <exp> ":" <conditional-exp> ]
+
         let mut conditional_exp_node = Parse::new();
         conditional_exp_node.entry = Node::ConditionalExp;
-        // parse <logical-or-exp> first
+
         let (logical_or_exp_node, pos) = r#try!(p_logical_or_exp(toks, pos));
         conditional_exp_node.child.push(logical_or_exp_node);
 
-        // it's optional if you got a "?"
+
         if toks[pos] == lexer::Tokens::QuestionMark {
-            // parse <exp>
+
             let pos = pos + 1;
             let (exp_node, pos) = r#try!(p_exp(toks, pos));
 
@@ -2638,7 +2707,7 @@ pub mod parser
                 ));
             }
             let pos = pos + 1;
-            // parse next <conditonal-exp>
+
             let (next_conditional_exp_node, pos) = r#try!(p_conditional_exp(toks, pos));
             conditional_exp_node.child.push(exp_node);
             conditional_exp_node.child.push(next_conditional_exp_node);
@@ -2649,54 +2718,54 @@ pub mod parser
     }
 
     fn p_exp_opt(toks: &[lexer::Tokens], pos: usize) -> Result<(Parse, usize), String> {
-        // <exp-option> ::= <exp> | ""
+
         let mut exp_opt_node = Parse::new();
         exp_opt_node.entry = Node::ExpOption;
         let res = p_exp(toks, pos);
         match res {
             Ok((exp_node, pos)) => {
-                // <exp>
+
                 exp_opt_node.child.push(exp_node);
                 return Ok((exp_opt_node, pos));
             }
             Err(_) => {
-                // ""
-                // no child, means null statement
+
+
                 return Ok((exp_opt_node, pos));
             }
         }
     }
 
     fn p_exp(toks: &[lexer::Tokens], pos: usize) -> Result<(Parse, usize), String> {
-        // println!("in fn: p_exp, with pos:{}", pos);
-        // <exp> ::= <id> [ "[" <exp> "]" ] "=" <exp> | <conditional-exp>
+
+
         let mut exp_node = Parse::new();
         exp_node.entry = Node::Exp;
 
         let tok = &toks[pos];
         match tok {
             lexer::Tokens::Identifier(var_name) => {
-                // check next token is Assign
+
                 let mut pos = pos + 1;
                 let tok = &toks[pos];
                 match tok {
                     lexer::Tokens::Assign => {
                         pos = pos + 1;
-                        // something like a = 1
+
                         let mut assign_node = Parse::new();
-                        assign_node.entry = Node::AssignNode(var_name.to_string(), false); // assign a int variable
+                        assign_node.entry = Node::AssignNode(var_name.to_string(), false);
                         let (next_exp_node, pos) = r#try!(p_exp(toks, pos));
                         assign_node.child.push(next_exp_node);
                         return Ok((assign_node, pos));
                     }
                     lexer::Tokens::LBracket => {
-                        // something like a[<exp>] = 1;
+
                         let back_pos = pos - 1;
                         pos = pos + 1;
-                        // parse exp.
+
                         let (index_node, new_pos) = r#try!(p_exp(toks, pos));
                         pos = new_pos;
-                        // parse ']'
+
                         if toks[pos] != lexer::Tokens::RBracket {
                             return Err(format!(
                                 "Expected ']' for bracket closing, found {:?} at {}",
@@ -2704,7 +2773,7 @@ pub mod parser
                             ));
                         }
 
-                        // try '='
+
                         pos = pos + 1;
                         if toks[pos] != lexer::Tokens::Assign {
                             pos = back_pos;
@@ -2713,9 +2782,9 @@ pub mod parser
                             return Ok((exp_node, pos));
                         }
                         pos = pos + 1;
-                        // try parse exp
+
                         let mut assign_node = Parse::new();
-                        assign_node.entry = Node::AssignNode(var_name.to_string(), true); // assign to a array element
+                        assign_node.entry = Node::AssignNode(var_name.to_string(), true);
                         let (res_node, new_pos) = r#try!(p_exp(toks, pos));
                         pos = new_pos;
                         assign_node.child.push(index_node);
@@ -2731,7 +2800,7 @@ pub mod parser
                 }
             }
             _ => {
-                // try <conditional-exp>
+
                 let (cond_node, pos) = r#try!(p_conditional_exp(toks, pos));
                 exp_node.child.push(cond_node);
                 return Ok((exp_node, pos));
@@ -2740,8 +2809,8 @@ pub mod parser
     }
 
     fn p_fn(toks: &[lexer::Tokens], pos: usize) -> Result<(Parse, usize), String> {
-        // println!("in p_fn with pos: {}", pos);
-        // <function> ::= "int" <id> "(" ")" "{" { <statement> } "}"
+
+
         if pos >= toks.len() {
             return Err("Out of program length".to_string());
         }
@@ -2768,12 +2837,12 @@ pub mod parser
             return Err(format!("Expected `(`, found {:?} at {}", toks[pos], pos));
         }
         pos = pos + 1;
-        // XXX: add void support, now only support int arg list
+
         let mut arg_list: Vec<String> = Vec::new();
         let mut arg_count = 0;
         while pos < toks.len() && toks[pos] != lexer::Tokens::RParen {
-            // try to parse argument list
-            // match int
+
+
             match &toks[pos] {
                 lexer::Tokens::Kwd(lexer::Keyword::Int) => {
                     pos = pos + 1;
@@ -2791,7 +2860,7 @@ pub mod parser
                     return Err(format!("Expected `int`, found {:?} at {}", toks[pos], pos));
                 }
             }
-            // match identifier
+
             match &toks[pos] {
                 lexer::Tokens::Identifier(var_name) => {
                     arg_list.push(var_name.to_string());
@@ -2805,7 +2874,7 @@ pub mod parser
                 }
             }
             arg_count = arg_count + 1;
-            // match ,
+
             match &toks[pos] {
                 lexer::Tokens::Comma => {
                     pos = pos + 1;
@@ -2862,25 +2931,25 @@ pub mod parser
     }
 
     fn p_declare(toks: &[lexer::Tokens], pos: usize) -> Result<(Parse, usize), String> {
-        // println!("in p_declare with pos = {}", pos);
+
         let tok = &toks[pos];
         match tok {
             lexer::Tokens::Kwd(lexer::Keyword::Int) => {
-                // "int" <id> [ = <exp> ] ";"
-                // or "int" <id> "[" <int> "]" ";"
+
+
                 let pos = pos + 1;
 
                 let tok = &toks[pos];
                 match tok {
                     lexer::Tokens::Identifier(var_name) => {
                         let mut stmt_node = Parse::new();
-                        stmt_node.entry = Node::Declare(var_name.to_string(), DataType::I64);
+                        stmt_node.entry = Node::Declare(var_name.to_string(), Data::I64);
                         let pos = pos + 1;
                         let tok = &toks[pos];
                         match tok {
                             lexer::Tokens::Assign => {
-                                // parse exp
-                                // e.g. int a = exp;
+
+
                                 let pos = pos + 1;
                                 let (exp_node, pos) = r#try!(p_exp(toks, pos));
 
@@ -2896,15 +2965,15 @@ pub mod parser
                                 return Ok((stmt_node, pos));
                             }
                             lexer::Tokens::Semicolon => {
-                                // if just declare, but no assignment, just record the var_name
-                                // e.g. int var;
+
+
                                 let pos = pos + 1;
                                 return Ok((stmt_node, pos));
                             }
                             lexer::Tokens::LBracket => {
-                                // array declare
-                                // e.g. int a[100];
-                                // XXX: now only just support literal array length
+
+
+
                                 if cfg!(feature = "debug") {
                                     println!("here in p_declare -> LBraket");
                                 }
@@ -2915,7 +2984,7 @@ pub mod parser
                                     lexer::Tokens::Literal(n) => {
                                         declare_node.entry = Node::Declare(
                                             var_name.to_string(),
-                                            DataType::Arr64(*n),
+                                            Data::Arr64(*n),
                                         );
                                         let pos = pos + 1;
                                         let tok = &toks[pos];
@@ -2974,50 +3043,50 @@ pub mod parser
         let tok = &toks[pos];
         match tok {
             lexer::Tokens::Kwd(lexer::Keyword::Int) => {
-                // try to parse declare
-                // let mut block_node = Parse::new();
-                // block_node.entry = Node::Block;
+
+
+
 
                 let (declare_node, pos) = r#try!(p_declare(toks, pos));
-                // block_node.child.push(declare_node);
-                // return Ok((block_node, pos));
+
+
                 return Ok((declare_node, pos));
             }
             _ => {
-                // try to parse statement
-                // let mut block_node = Parse::new();
-                // block_node.entry = Node::Block;
+
+
+
 
                 let (stmt_node, pos) = r#try!(p_stmt(toks, pos));
                 return Ok((stmt_node, pos));
-                // block_node.child.push(stmt_node);
+
                 //return Ok((block_node, pos));
             }
         }
     }
     fn p_stmt(toks: &[lexer::Tokens], pos: usize) -> Result<(Parse, usize), String> {
-        // println!("in fn : p_stmt, with pos {}", pos);
+
         let tok = &toks[pos];
         match tok {
             lexer::Tokens::LBrace => {
-                // "{" { <block-item> } "}"
+
                 let mut pos = pos + 1;
                 let mut stmt_node = Parse::new();
-                stmt_node.entry = Node::Stmt(StmtType::Compound);
+                stmt_node.entry = Node::Stmt(Statement::Compound);
 
-                // try to get some block item
+
                 while toks[pos] != lexer::Tokens::RBrace {
                     let (block_node, tmp_pos) = r#try!(p_block(toks, pos));
                     stmt_node.child.push(block_node);
                     pos = tmp_pos;
                 }
 
-                // throw "}"
+
                 pos = pos + 1;
                 return Ok((stmt_node, pos));
             }
             lexer::Tokens::Kwd(lexer::Keyword::Ret) => {
-                // "return" <exp> ";"
+
                 let pos = pos + 1;
                 let (exp_node, mut pos) = r#try!(p_exp(toks, pos));
 
@@ -3031,32 +3100,32 @@ pub mod parser
                 pos = pos + 1;
 
                 let mut stmt_node = Parse::new();
-                stmt_node.entry = Node::Stmt(StmtType::Return);
+                stmt_node.entry = Node::Stmt(Statement::Return);
                 stmt_node.child.push(exp_node);
                 return Ok((stmt_node, pos));
             }
             lexer::Tokens::Kwd(lexer::Keyword::If) => {
-                // "if" "(" <exp> ")" <statement> [ "else" <statement> ]
-                // this is the conditional statement
+
+
                 let mut stmt_node = Parse::new();
-                stmt_node.entry = Node::Stmt(StmtType::Conditional("if".to_string()));
+                stmt_node.entry = Node::Stmt(Statement::Conditional("if".to_string()));
                 let pos = pos + 1;
                 if pos >= toks.len() || toks[pos] != lexer::Tokens::LParen {
                     return Err(format!("Missing `(`"));
                 }
-                // try to parse exp
+
                 if cfg!(feature = "debug") {
                     println!("here pos = {}", pos);
                 }
                 let pos = pos + 1;
                 let (exp_node, pos) = r#try!(p_exp(toks, pos));
-                // println!("pos = {}", pos);
+
                 if pos >= toks.len() || toks[pos] != lexer::Tokens::RParen {
                     return Err(format!("Missing `)`"));
                 }
 
                 let pos = pos + 1;
-                // try to parse statement
+
                 if cfg!(feature = "debug") {
                     println!("If: parse stmt from pos = {}, tok: {:?}", pos, toks[pos]);
                 }
@@ -3064,10 +3133,10 @@ pub mod parser
                 stmt_node.child.push(exp_node);
                 stmt_node.child.push(clause_1_node);
 
-                // if has 'else'
-                // println!("SHOULD BE HERE , POS = {}", pos);
+
+
                 if pos < toks.len() && toks[pos] == lexer::Tokens::Kwd(lexer::Keyword::Else) {
-                    // try to parse statement 2
+
                     let pos = pos + 1;
                     let (clause_2_node, pos) = r#try!(p_stmt(toks, pos));
                     stmt_node.child.push(clause_2_node);
@@ -3077,21 +3146,21 @@ pub mod parser
                 }
             }
             lexer::Tokens::Kwd(lexer::Keyword::For) => {
-                // "for" "(" <exp-option> ";" <exp-option> ";" <exp-option> ")" <statement>
-                // "for" "(" <declaration> <exp-option> ";" <exp-option> ")" <statement>
+
+
                 let mut stmt_node = Parse::new();
                 let pos = pos + 1;
                 if pos >= toks.len() || toks[pos] != lexer::Tokens::LParen {
                     return Err(format!("Missing `(`"));
                 }
                 let pos = pos + 1;
-                // try to parse declaration
+
                 let decl_res = p_declare(toks, pos);
                 match decl_res {
                     Ok((declare_node, pos)) => {
-                        // "for" "(" <declaration> <exp-option> ";" <exp-option> ")" <statement>
+
                         stmt_node.child.push(declare_node);
-                        stmt_node.entry = Node::Stmt(StmtType::ForDecl);
+                        stmt_node.entry = Node::Stmt(Statement::ForDecl);
 
                         let (exp_opt_node, pos) = r#try!(p_exp_opt(toks, pos));
                         stmt_node.child.push(exp_opt_node);
@@ -3111,15 +3180,15 @@ pub mod parser
                             println!("pos: {} tok: {:?} before compound layer", pos, toks[pos]);
                         }
                         let mut compound_layer_node = Parse::new();
-                        compound_layer_node.entry = Node::Stmt(StmtType::Compound);
+                        compound_layer_node.entry = Node::Stmt(Statement::Compound);
                         let (next_stmt_node, pos) = r#try!(p_stmt(toks, pos));
                         compound_layer_node.child.push(next_stmt_node);
                         stmt_node.child.push(compound_layer_node);
                         return Ok((stmt_node, pos));
                     }
                     Err(_) => {
-                        // "for" "(" <exp-option> ";" <exp-option> ";" <exp-option> ")" <statement>
-                        stmt_node.entry = Node::Stmt(StmtType::For);
+
+                        stmt_node.entry = Node::Stmt(Statement::For);
                         let (exp_opt_node, pos) = r#try!(p_exp_opt(toks, pos));
                         stmt_node.child.push(exp_opt_node);
 
@@ -3146,16 +3215,16 @@ pub mod parser
                         let mut compound_layer_node = Parse::new();
                         let (next_stmt_node, pos) = r#try!(p_stmt(toks, pos));
                         compound_layer_node.child.push(next_stmt_node);
-                        compound_layer_node.entry = Node::Stmt(StmtType::Compound);
+                        compound_layer_node.entry = Node::Stmt(Statement::Compound);
                         stmt_node.child.push(compound_layer_node);
                         return Ok((stmt_node, pos));
                     }
                 }
             }
             lexer::Tokens::Kwd(lexer::Keyword::While) => {
-                // "while" "(" <exp> ")" <statement>
+
                 let mut stmt_node = Parse::new();
-                stmt_node.entry = Node::Stmt(StmtType::While);
+                stmt_node.entry = Node::Stmt(Statement::While);
                 let pos = pos + 1;
                 if pos >= toks.len() || toks[pos] != lexer::Tokens::LParen {
                     return Err(format!("Missing `(` needed by While"));
@@ -3174,13 +3243,13 @@ pub mod parser
                 return Ok((stmt_node, pos));
             }
             lexer::Tokens::Kwd(lexer::Keyword::Do) => {
-                // "do" <statement> "while" "(" <exp> ")" ";"
+
                 let mut stmt_node = Parse::new();
-                stmt_node.entry = Node::Stmt(StmtType::Do);
+                stmt_node.entry = Node::Stmt(Statement::Do);
                 let pos = pos + 1;
                 let (next_stmt_node, pos) = r#try!(p_stmt(toks, pos));
                 stmt_node.child.push(next_stmt_node);
-                // parse while
+
                 if pos >= toks.len() || toks[pos] != lexer::Tokens::Kwd(lexer::Keyword::While) {
                     return Err(format!("Missing `while` needed by do"));
                 }
@@ -3208,7 +3277,7 @@ pub mod parser
             }
             lexer::Tokens::Kwd(lexer::Keyword::Continue) => {
                 let mut stmt_node = Parse::new();
-                stmt_node.entry = Node::Stmt(StmtType::Continue);
+                stmt_node.entry = Node::Stmt(Statement::Continue);
                 let pos = pos + 1;
                 if pos >= toks.len() || toks[pos] != lexer::Tokens::Semicolon {
                     return Err(format!("Missing `;` needed by continue"));
@@ -3218,7 +3287,7 @@ pub mod parser
             }
             lexer::Tokens::Kwd(lexer::Keyword::Break) => {
                 let mut stmt_node = Parse::new();
-                stmt_node.entry = Node::Stmt(StmtType::Break);
+                stmt_node.entry = Node::Stmt(Statement::Break);
                 let pos = pos + 1;
                 if pos >= toks.len() || toks[pos] != lexer::Tokens::Semicolon {
                     return Err(format!("Missing `;` needed by break"));
@@ -3227,9 +3296,9 @@ pub mod parser
                 return Ok((stmt_node, pos));
             }
             _ => {
-                // try to parse exp-option;
+
                 let mut stmt_node = Parse::new();
-                stmt_node.entry = Node::Stmt(StmtType::Exp);
+                stmt_node.entry = Node::Stmt(Statement::Exp);
                 //let pos = pos + 1;
                 let (exp_opt_node, pos) = r#try!(p_exp_opt(toks, pos));
 
@@ -3253,8 +3322,8 @@ pub mod parser
 
         match next {
             lexer::Tokens::LParen => {
-                // parse expression inside parens
-                // factor -> exp
+
+
                 let (exp_node, tmp_pos) = r#try!(p_exp(toks, pos));
                 pos = tmp_pos;
                 next = &toks[pos];
@@ -3268,11 +3337,11 @@ pub mod parser
                 let mut factor_node = Parse::new();
                 factor_node.entry = Node::Factor;
                 factor_node.child.push(exp_node);
-                // println!("out p_factor with pos: {}", pos);
+
                 return Ok((factor_node, pos));
             }
             lexer::Tokens::Minus | lexer::Tokens::Tilde | lexer::Tokens::Exclamation | lexer::Tokens::Addr => {
-                // factor -> UnExp -> factor
+
                 let mut factor_node = Parse::new();
                 let mut unexp_node = Parse::new();
                 factor_node.entry = Node::Factor;
@@ -3298,13 +3367,13 @@ pub mod parser
                 return Ok((factor_node, pos));
             }
             lexer::Tokens::Literal(n) => {
-                // Factor -> Const
+
                 let mut const_node = Parse::new();
                 let mut factor_node = Parse::new();
                 const_node.entry = Node::Const(*n);
                 factor_node.entry = Node::Factor;
                 factor_node.child.push(const_node);
-                // println!("out p_factor with pos: {}", pos);
+
                 return Ok((factor_node, pos));
             }
             lexer::Tokens::Identifier(var_name) => {
@@ -3312,7 +3381,7 @@ pub mod parser
                     println!("here\n");
                 }
                 if pos < toks.len() && toks[pos] == lexer::Tokens::LParen {
-                    // Factor -> FnCall
+
                     let mut factor_node = Parse::new();
                     pos = pos - 1;
                     factor_node.entry = Node::Factor;
@@ -3320,7 +3389,7 @@ pub mod parser
                     factor_node.child.push(fn_call_node);
                     return Ok((factor_node, pos));
                 } else if pos < toks.len() && toks[pos] == lexer::Tokens::LBracket {
-                    // Factor -> Array referencing
+
                     let mut factor_node = Parse::new();
                     pos = pos - 1;
                     factor_node.entry = Node::Factor;
@@ -3328,13 +3397,13 @@ pub mod parser
                     factor_node.child.push(arr_ref_node);
                     return Ok((factor_node, pos));
                 } else {
-                    // Factor -> Var
+
                     let mut var_node = Parse::new();
                     let mut factor_node = Parse::new();
                     var_node.entry = Node::Var(var_name.to_string());
                     factor_node.entry = Node::Factor;
                     factor_node.child.push(var_node);
-                    // println!("out p_factor with pos: {}", pos);
+
                     return Ok((factor_node, pos));
                 }
             }
@@ -3343,7 +3412,7 @@ pub mod parser
     }
 
     fn p_arr_ref(toks: &[lexer::Tokens], pos: usize) -> Result<(Parse, usize), String> {
-        // array reference ::= <id> "[" <exp> "]"
+
         let mut arr_ref_node = Parse::new();
         let mut var_name = String::new();
         match &toks[pos] {
@@ -3360,7 +3429,7 @@ pub mod parser
         arr_ref_node.entry = Node::ArrayRef(var_name);
 
         let mut pos = pos + 1;
-        // match '['
+
         match toks[pos] {
             lexer::Tokens::LBracket => {
                 pos = pos + 1;
@@ -3389,7 +3458,7 @@ pub mod parser
         return Ok((arr_ref_node, pos));
     }
     fn p_fn_call(toks: &[lexer::Tokens], pos: usize) -> Result<(Parse, usize), String> {
-        // <function-call> ::= id "(" [ <exp> { "," <exp> } ] ")"
+
         //println!("in fn p_fn_call");
         let mut fn_call_node = Parse::new();
         let mut fn_name = String::new();
@@ -3406,7 +3475,7 @@ pub mod parser
         }
         fn_call_node.entry = Node::FnCall(fn_name);
         let mut pos = pos + 1;
-        // match '('
+
         match toks[pos] {
             lexer::Tokens::LParen => {
                 pos = pos + 1;
@@ -3419,12 +3488,12 @@ pub mod parser
             }
         }
         while pos < toks.len() && toks[pos] != lexer::Tokens::RParen {
-            // try to parse argument exp
+
             let (exp_node, new_pos) = r#try!(p_exp(toks, pos));
             fn_call_node.child.push(exp_node);
             pos = new_pos;
 
-            // match ,
+
             match &toks[pos] {
                 lexer::Tokens::Comma => {
                     pos = pos + 1;
@@ -3451,7 +3520,7 @@ pub mod parser
         let mut logAndExp_node = Parse::new();
         logAndExp_node.entry = Node::LogicalAndExp;
 
-        // LogicalAndExp -> EqualityExp
+
         let mut pos = pos;
         let (eq_node, tmp_pos) = r#try!(p_eq_exp(toks, pos));
         pos = tmp_pos;
@@ -3462,8 +3531,8 @@ pub mod parser
             pos = pos - 1;
             return Ok((logAndExp_node, pos));
         }
-        // Term -> BinExp -> (EqualityExp, EqualityExp)
-        let mut eq_node = eq_node; // change to mutable
+
+        let mut eq_node = eq_node;
         while *tok == lexer::Tokens::And {
             let mut binexp_node = Parse::new();
             binexp_node.entry = Node::BinExp(lexer::Tokens::And);
@@ -3566,11 +3635,11 @@ pub mod parser
         return Ok((relational_node, pos));
     }
     fn p_term(toks: &[lexer::Tokens], pos: usize) -> Result<(Parse, usize), String> {
-        // println!("in p_term with pos: {}", pos);
+
         let mut term_node = Parse::new();
         term_node.entry = Node::Term;
 
-        // term -> factor
+
         let mut pos = pos;
         let (factor_node, tmp_pos) = r#try!(p_factor(toks, pos));
         pos = tmp_pos;
@@ -3579,11 +3648,11 @@ pub mod parser
         if *tok != lexer::Tokens::Multi && *tok != lexer::Tokens::Splash {
             term_node.child.push(factor_node);
             pos = pos - 1;
-            // println!("1. out p_term with pos: {}", pos);
+
             return Ok((term_node, pos));
         }
 
-        // term -> BinExp -> (factor_left, factor_right)
+
         let mut factor_node = factor_node;
         while *tok == lexer::Tokens::Multi || *tok == lexer::Tokens::Splash {
             let mut binexp_node = Parse::new();
@@ -3604,25 +3673,25 @@ pub mod parser
         }
         term_node.child.push(factor_node);
         pos = pos - 1;
-        // println!("2. out p_term with pos: {}", pos);
+
         return Ok((term_node, pos));
     }
 
     fn p_additive_exp(toks: &[lexer::Tokens], pos: usize) -> Result<(Parse, usize), String> {
-        // println!("in p_exp with pos: {}", pos);
+
         let mut exp_node = Parse::new();
         exp_node.entry = Node::AdditiveExp;
-        // exp -> term
+
         let mut pos = pos;
         let (term_node, tmp_pos) = r#try!(p_term(toks, pos));
         pos = tmp_pos;
         let mut tok = &toks[pos];
         if *tok != lexer::Tokens::Plus && *tok != lexer::Tokens::Minus {
             exp_node.child.push(term_node);
-            // println!("1.out p_exp with pos: {}", pos);
+
             return Ok((exp_node, pos));
         }
-        // exp -> BinExp()
+
         //peek next token, if it is lexer::Tokens::Plus or lexer::Tokens::Minus
         let mut term_node = term_node;
         let mut pos = pos;
@@ -3650,9 +3719,9 @@ pub mod parser
         let mut prog_node = Parse::new();
         prog_node.entry = Node::Prog(c_src_name.to_string());
         let mut pos = 0;
-        // now we need to add support for global variables
+
         while pos < toks.len() {
-            // try to parse global variable declaration
+
             let p_res = p_declare(&toks, pos);
             match p_res {
                 Ok((decl_node, new_pos)) => {
@@ -3660,7 +3729,7 @@ pub mod parser
                     prog_node.child.push(decl_node);
                 }
                 Err(_) => {
-                    // try to parse fn definition
+
                     if cfg!(feature = "debug") {
                         println!("try to parse fn definition");
                     }
@@ -3674,7 +3743,7 @@ pub mod parser
         return Ok(prog_node);
     }
 
-    // XXX: should change the return type to Result<String, String> to remove panic!()
+
     pub fn print(tree: &Parse, idt: usize) -> String {
         let mut idt_prefix = String::new();
         for _i in 0..idt {
@@ -3714,7 +3783,7 @@ pub mod parser
                         idt_prefix
                     ),
                     true => {
-                        // assign to array
+
                         format!(
                             "{}n_type: AssignNode array: {} [\n{}\n{}\n{}]",
                             idt_prefix,
@@ -3791,7 +3860,7 @@ pub mod parser
                     "{}n_type: FnCall, Name: {} exp_list: [\n{}\n{}]",
                     idt_prefix, fn_name, tmp, idt_prefix
                 )
-                // list of exp
+
             }
             Node::Fn(fn_name, vars) => {
                 let mut tmp = String::new();
@@ -3821,7 +3890,7 @@ pub mod parser
                 )
             }
             Node::Declare(var_name, t) => match t {
-                DataType::I64 => {
+                Data::I64 => {
                     if tree.child.is_empty() {
                         format!(
                             "{}n_type: Declare, type: Int var_name: {}",
@@ -3840,7 +3909,7 @@ pub mod parser
                         )
                     }
                 }
-                DataType::Arr64(len) => format!(
+                Data::Arr64(len) => format!(
                     "{}n_type: Declare, type: Array  var_name: {}, length: {}",
                     idt_prefix, var_name, len,
                 ),
@@ -3861,7 +3930,7 @@ pub mod parser
                 )
             }
             Node::Stmt(stmt) => match stmt {
-                StmtType::For => {
+                Statement::For => {
                     let exp_opt_1 = print(tree.child.get(0).expect("No exp1 in for"), idt + 1);
                     let exp_opt_2 = print(tree.child.get(1).expect("No exp2 in for"), idt + 1);
                     let exp_opt_3 = print(tree.child.get(2).expect("No exp3 in for"), idt + 1);
@@ -3889,7 +3958,7 @@ pub mod parser
                         idt_prefix
                     )
                 }
-                StmtType::ForDecl => {
+                Statement::ForDecl => {
                     let d = print(tree.child.get(0).expect("No declaration in for"), idt + 1);
                     let exp_opt_1 = print(tree.child.get(1).expect("No exp1 in for"), idt + 1);
                     let exp_opt_2 = print(tree.child.get(2).expect("No exp2 in for"), idt + 1);
@@ -3918,7 +3987,7 @@ pub mod parser
                         idt_prefix
                     )
                 }
-                StmtType::Do => {
+                Statement::Do => {
                     let stmt = print(tree.child.get(0).expect("No stmt in do"), idt + 1);
                     let exp = print(tree.child.get(1).expect("No exp in do"), idt + 1);
                     format!(
@@ -3936,7 +4005,7 @@ pub mod parser
                         idt_prefix
                     )
                 }
-                StmtType::While => {
+                Statement::While => {
                     let exp = print(tree.child.get(0).expect("No stmt in do"), idt + 1);
                     let stmt = print(tree.child.get(1).expect("No exp in do"), idt + 1);
                     format!(
@@ -3954,9 +4023,9 @@ pub mod parser
                         idt_prefix
                     )
                 }
-                StmtType::Continue => format!("{}n_type: Continue", idt_prefix),
-                StmtType::Break => format!("{}n_type: Break", idt_prefix),
-                StmtType::Return => format!(
+                Statement::Continue => format!("{}n_type: Continue", idt_prefix),
+                Statement::Break => format!("{}n_type: Break", idt_prefix),
+                Statement::Return => format!(
                     "{}n_type: Stmt::Return, [\n{}\n{}]",
                     idt_prefix,
                     print(
@@ -3967,7 +4036,7 @@ pub mod parser
                     ),
                     idt_prefix
                 ),
-                StmtType::Exp => format!(
+                Statement::Exp => format!(
                     "{}n_type: Stmt::Exp, [\n{}\n{}]",
                     idt_prefix,
                     print(
@@ -3976,7 +4045,7 @@ pub mod parser
                     ),
                     idt_prefix
                 ),
-                StmtType::Conditional(op) => {
+                Statement::Conditional(op) => {
                     let mut tmp = String::new();
                     let mut inc = 0;
                     for it in tree.child.iter() {
@@ -3991,7 +4060,7 @@ pub mod parser
                         idt_prefix, op, tmp, idt_prefix
                     )
                 }
-                StmtType::Compound => {
+                Statement::Compound => {
                     let mut tmp = String::new();
                     let mut inc = 0;
 
@@ -4122,4 +4191,4 @@ pub fn main() ->  Result<(), Box<dyn error::Error>>
         Ok(())
     }
 }
-// 4125 /////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// 4194 /////////////////////////////////////////////////////////////////////////////////////////////////////////////
