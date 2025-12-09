@@ -146,7 +146,7 @@ pub mod examples
     */
     /*
     simple_print.c
-    
+
     int main(void)
     {
         for (int i = 0; i < 10; i = i + 1)
@@ -174,25 +174,28 @@ pub mod gen
         *,
     };
     /*
-    use crate::lexer::TokType;
-    use crate::parser::{DataType, NodeType, ParseNode, StmtType};
+    use crate::lexer::Tokens;
+    use crate::parser::{DataType, Node, Parse, StmtType};
     use std::collections::{HashMap, HashSet};
     use std::sync::atomic;
     */
     static LABEL_COUNTER: atomic::AtomicUsize = atomic::AtomicUsize::new(0);
-    fn gen_labels(prefix: &str) -> String {
+    fn gen_labels(prefix: &str) -> String 
+    {
         let label_counter = LABEL_COUNTER.fetch_add(1, atomic::Ordering::SeqCst);
         let label = format!(".L{}{}", prefix, label_counter);
-
         label
     }
 
     static FLAG_FOR_MAIN_HAS_RET: atomic::AtomicBool = atomic::AtomicBool::new(false);
-    fn fn_main_has_ret() {
+    
+    fn fn_main_has_ret() 
+    {
         FLAG_FOR_MAIN_HAS_RET.swap(true, atomic::Ordering::SeqCst);
     }
 
-    fn gen_fn_prologue(fn_name: &str) -> String {
+    fn gen_fn_prologue(fn_name: &str) -> String 
+    {
         let p = "        ";
         format!(
             "{}.text\n\
@@ -223,7 +226,8 @@ pub mod gen
         )
     }
 
-    fn gen_fn_epilogue() -> String {
+    fn gen_fn_epilogue() -> String 
+    {
         let p = "        ";
         format!(
             "{}movq %rbp, %rsp\n\
@@ -233,71 +237,73 @@ pub mod gen
         )
     }
 
-    fn compute_const(tree: &ParseNode) -> i64 {
-        match &tree.entry {
-            NodeType::BinExp(op) => {
+    fn compute_const(tree: &Parse) -> i64 
+    {
+        match &tree.entry 
+        {
+            Node::BinExp(op) => {
                 let lhs = compute_const(tree.child.get(0).unwrap());
                 let rhs = compute_const(tree.child.get(1).unwrap());
                 match op {
-                    TokType::Plus => {
+                    Tokens::Plus => {
                         return lhs + rhs;
                     }
-                    TokType::Multi => {
+                    Tokens::Multi => {
                         return lhs * rhs;
                     }
-                    TokType::Splash => {
+                    Tokens::Splash => {
                         return lhs / rhs;
                     }
-                    TokType::And => {
+                    Tokens::And => {
                         if lhs != 0 && rhs != 0 {
                             return 1;
                         } else {
                             return 0;
                         }
                     }
-                    TokType::Or => {
+                    Tokens::Or => {
                         if lhs != 0 || rhs != 0 {
                             return 1;
                         } else {
                             return 0;
                         }
                     }
-                    TokType::Equal => {
+                    Tokens::Equal => {
                         if lhs == rhs {
                             return 1;
                         } else {
                             return 0;
                         }
                     }
-                    TokType::NotEqual => {
+                    Tokens::NotEqual => {
                         if lhs != rhs {
                             return 1;
                         } else {
                             return 0;
                         }
                     }
-                    TokType::LessEqual => {
+                    Tokens::LessEqual => {
                         if lhs <= rhs {
                             return 1;
                         } else {
                             return 0;
                         }
                     }
-                    TokType::GreaterEqual => {
+                    Tokens::GreaterEqual => {
                         if lhs >= rhs {
                             return 1;
                         } else {
                             return 0;
                         }
                     }
-                    TokType::Lt => {
+                    Tokens::Lt => {
                         if lhs < rhs {
                             return 1;
                         } else {
                             return 0;
                         }
                     }
-                    TokType::Gt => {
+                    Tokens::Gt => {
                         if lhs > rhs {
                             return 1;
                         } else {
@@ -307,16 +313,16 @@ pub mod gen
                     _ => panic!("{:?} should not occur in global variable initialization"),
                 }
             }
-            NodeType::UnExp(op) => {
+            Node::UnExp(op) => {
                 let child_val = compute_const(tree.child.get(0).unwrap());
                 match op {
-                    TokType::Minus => {
+                    Tokens::Minus => {
                         return -child_val;
                     }
-                    TokType::Tilde => {
+                    Tokens::Tilde => {
                         return !child_val;
                     }
-                    TokType::Exclamation => {
+                    Tokens::Exclamation => {
                         if child_val == 0 {
                             return 1;
                         } else {
@@ -326,13 +332,15 @@ pub mod gen
                     _ => panic!("Expected Unary Operator, found {:?}", op),
                 }
             }
-            NodeType::Const(val) => {
+            Node::Const(val) => {
                 return val * 1;
             }
             _ => return compute_const(tree.child.get(0).unwrap()),
         }
     }
-    pub fn gen_prog(tree: &ParseNode) -> String {
+
+    pub fn gen_prog(tree: &Parse) -> String 
+    {
         let p = "        ".to_string();
 
         // iter every function node
@@ -342,14 +350,10 @@ pub mod gen
         let idx: isize = 0;
         for it in tree.child.iter() {
             match &it.entry {
-                NodeType::Declare(var_name, DataType::I64) => {
+                Node::Declare(var_name, DataType::I64) => {
                     // record it in the scope, index_map,
                     global_variable_scope.insert(var_name.to_string());
                     if it.child.is_empty() {
-                        // uninitialized global variable
-                        // just put them in .comm
-                        // now we use value has 8 bytes by default.
-                        // XXX: should be vary-length based on the data type.
                         prog_body.push_str(&format!("{}.comm {}, 8, 8\n", p, var_name,))
                     } else {
                         let val = compute_const(&it.child.get(0).unwrap());
@@ -365,11 +369,11 @@ pub mod gen
                         ));
                     }
                 }
-                NodeType::Declare(var_name, DataType::Arr64(len)) => {
+                Node::Declare(var_name, DataType::Arr64(len)) => {
                     global_variable_scope.insert(var_name.to_string());
                     prog_body.push_str(&format!("{}.comm {}, {}, 32\n", p, var_name, len * 8));
                 }
-                NodeType::Fn(fn_name, var_list_opt) => {
+                Node::Fn(fn_name, var_list_opt) => {
                     let fn_prologue = gen_fn_prologue(fn_name);
                     let fn_epilogue = gen_fn_epilogue();
                     // cause in function, we have to pass the offset of argument and scope contains argument
@@ -444,7 +448,7 @@ pub mod gen
         }
 
         match &tree.entry {
-            NodeType::Prog(prog_name) => format!(
+            Node::Prog(prog_name) => format!(
                 "{}.file \"{}\"\n\
                 {}\
                 {}.ident	\"crust: 0.1 (By Haoran Wang)\"\n\
@@ -455,8 +459,9 @@ pub mod gen
         }
     }
 
-    pub fn gen_declare(
-        tree: &ParseNode,
+    pub fn gen_declare
+    (
+        tree: &Parse,
         index_map: &HashMap<String, isize>,
         scope: &HashMap<String, bool>, // 1 -> function argument, 0 -> local variables
         idx: isize,
@@ -465,14 +470,15 @@ pub mod gen
         loop_in_label: Option<&str>,
         loop_out_label: Option<&str>,
         global_variable_scope: &HashSet<String>,
-    ) -> (HashMap<String, isize>, HashMap<String, bool>, isize, String) {
+    ) -> (HashMap<String, isize>, HashMap<String, bool>, isize, String) 
+    {
         // println!("in gen_declare with {:?}", tree.entry);
         let p = "        ";
         let mut index_map = index_map.clone();
         let mut scope = scope.clone();
         let mut idx = idx;
         match &tree.entry {
-            NodeType::Declare(var_name, data_type) => {
+            Node::Declare(var_name, data_type) => {
                 let get_opt = scope.get(var_name);
                 match get_opt {
                     Some(flag) => {
@@ -533,7 +539,7 @@ pub mod gen
     }
 
     pub fn gen_for(
-        tree: &ParseNode,
+        tree: &Parse,
         index_map: &HashMap<String, isize>,
         idx: isize,
         global_variable_scope: &HashSet<String>,
@@ -547,7 +553,7 @@ pub mod gen
         // now in a new block now
         let mut scope: HashMap<String, bool> = HashMap::new();
         match tree.entry {
-            NodeType::Stmt(StmtType::ForDecl) => {
+            Node::Stmt(StmtType::ForDecl) => {
                 let (index_map_new, scope_new, idx_new, init) = gen_declare(
                     tree.child.get(0).unwrap(),
                     &index_map,
@@ -635,7 +641,7 @@ pub mod gen
                     b_deallocate
                 )
             }
-            NodeType::Stmt(StmtType::For) => {
+            Node::Stmt(StmtType::For) => {
                 let init = gen_stmt(
                     tree.child.get(0).unwrap(),
                     &index_map,
@@ -724,7 +730,7 @@ pub mod gen
     }
     // gen_block() - into a new block, will have empty scope
     pub fn gen_block(
-        tree: &ParseNode,
+        tree: &Parse,
         index_map: &HashMap<String, isize>,
         scope: &HashMap<String, bool>,
         idx: isize,
@@ -765,7 +771,7 @@ pub mod gen
         for it in &tree.child {
             // iter through every block-item
             match &it.entry {
-                NodeType::Declare(_var_name, DataType::I64) => {
+                Node::Declare(_var_name, DataType::I64) => {
                     let (index_map_new, scope_new, idx_new, s) = gen_declare(
                         it,
                         &index_map,
@@ -782,7 +788,7 @@ pub mod gen
                     current_scope = scope_new.clone();
                     stmts.push_str(&s);
                 }
-                NodeType::Stmt(StmtType::Compound) => {
+                Node::Stmt(StmtType::Compound) => {
                     stmts.push_str(&gen_block(
                         it,
                         &index_map,
@@ -827,7 +833,7 @@ pub mod gen
     }
 
     fn gen_addr(
-        tree: &ParseNode,
+        tree: &Parse,
         index_map: &HashMap<String, isize>,
         idx: isize,
         lbb: &str, // label_begin_block
@@ -839,7 +845,7 @@ pub mod gen
         let p = "        ".to_string();
         // first judge whether it is a global variable or local variable
         match &tree.entry {
-            NodeType::ArrayRef(var_name) => {
+            Node::ArrayRef(var_name) => {
                 match index_map.get(var_name) {
                     Some(c) => {
                         // local array
@@ -884,7 +890,7 @@ pub mod gen
                     }
                 }
             }
-            NodeType::Var(name) => {
+            Node::Var(name) => {
                 match index_map.get(name) {
                     Some(c) => {
                         // local variable
@@ -919,7 +925,7 @@ pub mod gen
         }
     }
     pub fn gen_stmt(
-        tree: &ParseNode,
+        tree: &Parse,
         index_map: &HashMap<String, isize>,
         idx: isize,
         lbb: &str, // label_begin_block
@@ -930,7 +936,7 @@ pub mod gen
     ) -> String {
         let p = "        ".to_string(); // 8 white spaces
         match &tree.entry {
-            NodeType::StringLiteral(data, tag) => format!(
+            Node::StringLiteral(data, tag) => format!(
                 "{}.section .rodata\n\
                 {}:\n\
                 {}.string \"{}\"\n\
@@ -938,7 +944,7 @@ pub mod gen
                 {}leaq {}(%rip), %rax\n",
                 p, tag, p, data, p, p, tag,
             ),
-            NodeType::ConditionalExp => {
+            Node::ConditionalExp => {
                 if tree.child.len() == 1 {
                     // just one <logical-or-exp>
                     gen_stmt(
@@ -1003,7 +1009,7 @@ pub mod gen
                     panic!("Error: something wrong in conditional expression")
                 }
             }
-            NodeType::FnCall(fn_name) => {
+            Node::FnCall(fn_name) => {
                 // now change to x64 calling convetion
                 // arguments: 1st 2nd 3rd 4th 5th 6th ...
                 //            rdi rsi rdx rcx r8  r9  stack
@@ -1085,7 +1091,7 @@ pub mod gen
                 }
                 s
             }
-            NodeType::Stmt(stmt) => match stmt {
+            Node::Stmt(stmt) => match stmt {
                 StmtType::Return => format!(
                     "{}\
                     {}\
@@ -1272,7 +1278,7 @@ pub mod gen
                     )
                 }
             },
-            NodeType::ArrayRef(var_name) => {
+            Node::ArrayRef(var_name) => {
                 let get_index = gen_stmt(
                     tree.child
                         .get(0)
@@ -1300,7 +1306,7 @@ pub mod gen
                     get_index, p, p, p, p, var_name, p, p, p,
                 )
             }
-            NodeType::AssignNode(var_name, true) => {
+            Node::AssignNode(var_name, true) => {
                 match index_map.get(var_name) {
                     None => {
                         // not in current scope, try to search global scope
@@ -1378,7 +1384,7 @@ pub mod gen
                     }
                 }
             }
-            NodeType::AssignNode(var_name, false) => {
+            Node::AssignNode(var_name, false) => {
                 // assign to int variable
                 match index_map.get(var_name) {
                     None => {
@@ -1440,8 +1446,8 @@ pub mod gen
                     }
                 }
             }
-            NodeType::UnExp(op) => match op {
-                TokType::Addr => format!(
+            Node::UnExp(op) => match op {
+                Tokens::Addr => format!(
                     // put address of the factor in %rax
                     "{}", gen_addr(
                         tree.child.get(0).expect("Addressing node no child"),
@@ -1453,7 +1459,7 @@ pub mod gen
                         loop_out_label,
                         global_variable_scope)
                 ),
-                TokType::Minus => format!(
+                Tokens::Minus => format!(
                     "{}\
                     {}neg %rax\n",
                     gen_stmt(
@@ -1468,7 +1474,7 @@ pub mod gen
                     ),
                     p
                 ),
-                TokType::Tilde => format!(
+                Tokens::Tilde => format!(
                     "{}\
                     {}not %rax\n",
                     gen_stmt(
@@ -1483,7 +1489,7 @@ pub mod gen
                     ),
                     p
                 ),
-                TokType::Exclamation => format!(
+                Tokens::Exclamation => format!(
                     "{}\
                     {}cmp  $0, %rax\n\
                     {}movq $0, %rax\n\
@@ -1507,9 +1513,9 @@ pub mod gen
                     op
                 )),
             },
-            NodeType::BinExp(op) => {
+            Node::BinExp(op) => {
                 match op {
-                    TokType::Plus => format!(
+                    Tokens::Plus => format!(
                         "{}\
                         {}pushq %rax\n\
                         {}\
@@ -1539,7 +1545,7 @@ pub mod gen
                         p,
                         p
                     ),
-                    TokType::Minus => format!(
+                    Tokens::Minus => format!(
                         "{}\
                         {}pushq %rax\n\
                         {}\
@@ -1570,7 +1576,7 @@ pub mod gen
                         p,
                         p
                     ),
-                    TokType::Multi => format!(
+                    Tokens::Multi => format!(
                         "{}\
                         {}pushq %rax\n\
                         {}\
@@ -1600,7 +1606,7 @@ pub mod gen
                         p,
                         p
                     ),
-                    TokType::Splash => format!(
+                    Tokens::Splash => format!(
                         "{}\
                         {}pushq %rax\n\
                         {}\
@@ -1633,7 +1639,7 @@ pub mod gen
                         p,
                         p
                     ),
-                    TokType::Equal => format!(
+                    Tokens::Equal => format!(
                         "{}\
                         {}pushq %rax\n\
                         {}\
@@ -1667,7 +1673,7 @@ pub mod gen
                         p,
                         p
                     ),
-                    TokType::NotEqual => format!(
+                    Tokens::NotEqual => format!(
                         "{}\
                         {}pushq %rax\n\
                         {}\
@@ -1701,7 +1707,7 @@ pub mod gen
                         p,
                         p
                     ),
-                    TokType::LessEqual => format!(
+                    Tokens::LessEqual => format!(
                         "{}\
                         {}pushq %rax\n\
                         {}\
@@ -1735,7 +1741,7 @@ pub mod gen
                         p,
                         p
                     ),
-                    TokType::GreaterEqual => format!(
+                    Tokens::GreaterEqual => format!(
                         "{}\
                         {}pushq %rax\n\
                         {}\
@@ -1769,7 +1775,7 @@ pub mod gen
                         p,
                         p
                     ),
-                    TokType::Or => {
+                    Tokens::Or => {
                         let clause2_label = gen_labels("CLAUSE");
                         let end_label = gen_labels("END");
                         format!(
@@ -1817,7 +1823,7 @@ pub mod gen
                             end_label
                         )
                     }
-                    TokType::And => {
+                    Tokens::And => {
                         let clause2_label = gen_labels("clause");
                         let end_label = gen_labels("end");
                         format!(
@@ -1863,7 +1869,7 @@ pub mod gen
                             end_label
                         )
                     }
-                    TokType::Lt => format!(
+                    Tokens::Lt => format!(
                         "{}\
                         {}pushq %rax\n\
                         {}\
@@ -1897,7 +1903,7 @@ pub mod gen
                         p,
                         p
                     ),
-                    TokType::Gt => format!(
+                    Tokens::Gt => format!(
                         "{}\
                         {}pushq %rax\n\
                         {}\
@@ -1937,8 +1943,8 @@ pub mod gen
                     )),
                 }
             }
-            NodeType::Const(n) => format!("{}movq ${}, %rax\n", p, n),
-            NodeType::Var(var_name) => {
+            Node::Const(n) => format!("{}movq ${}, %rax\n", p, n),
+            Node::Var(var_name) => {
                 let var_offset = index_map.get(var_name);
                 match var_offset {
                     Some(t) => {
@@ -1958,7 +1964,7 @@ pub mod gen
                     }
                 }
             }
-            NodeType::ExpOption => {
+            Node::ExpOption => {
                 if tree.child.len() == 1 {
                     gen_stmt(
                         tree.child
@@ -1978,15 +1984,15 @@ pub mod gen
                     format!("{}movq $1, %rax\n", p)
                 }
             }
-            NodeType::EqualityExp
-            | NodeType::RelationalExp
-            | NodeType::Term
-            | NodeType::Exp
-            | NodeType::Factor
-            | NodeType::AdditiveExp
-            | NodeType::LogicalOrExp
-            | NodeType::Block
-            | NodeType::LogicalAndExp => gen_stmt(
+            Node::EqualityExp
+            | Node::RelationalExp
+            | Node::Term
+            | Node::Exp
+            | Node::Factor
+            | Node::AdditiveExp
+            | Node::LogicalOrExp
+            | Node::Block
+            | Node::LogicalAndExp => gen_stmt(
                 tree.child
                     .get(0)
                     .expect(&format!("{:?} node no child", &tree.entry)),
@@ -2017,7 +2023,7 @@ pub mod lexer
     /*
     */
     #[derive(Eq, PartialEq, Clone, Debug)]
-    pub enum KwdType 
+    pub enum Keyword 
     {
         Int,      // int
         Void,     // void
@@ -2032,9 +2038,9 @@ pub mod lexer
     }
 
     #[derive(Eq, PartialEq, Clone, Debug)]
-    pub enum TokType 
+    pub enum Tokens 
     {
-        Kwd(KwdType),
+        Kwd(Keyword),
         LBrace,             // {
         RBrace,             // }
         LParen,             // (
@@ -2073,7 +2079,7 @@ pub mod lexer
             return format!(".LSTR{}", LABEL_COUNTER);
         }
     }
-    pub fn lex(input: &str) -> Result<Vec<TokType>, String> {
+    pub fn lex(input: &str) -> Result<Vec<Tokens>, String> {
         let mut result = Vec::new();
 
         let mut it = input.chars().peekable();
@@ -2091,7 +2097,7 @@ pub mod lexer
                         s.push(c);
                         it.next();
                     }
-                    result.push(TokType::String(s, gen_string_tag()));
+                    result.push(Tokens::String(s, gen_string_tag()));
                     it.next();
                 }
                 '\'' => {
@@ -2108,40 +2114,40 @@ pub mod lexer
                         let &c = it.peek().unwrap();
                         match c {
                             'a' => {
-                                result.push(TokType::Literal(0x07));
+                                result.push(Tokens::Literal(0x07));
                             } // Alert (Beep, Bell) (added in C89)
                             'b' => {
-                                result.push(TokType::Literal(0x08));
+                                result.push(Tokens::Literal(0x08));
                             } // Backspace
                             'e' => {
-                                result.push(TokType::Literal(0x1B));
+                                result.push(Tokens::Literal(0x1B));
                             } // escape character
                             'f' => {
-                                result.push(TokType::Literal(0x0C));
+                                result.push(Tokens::Literal(0x0C));
                             } // Formfeed Page Break
                             'n' => {
-                                result.push(TokType::Literal(0x0A));
+                                result.push(Tokens::Literal(0x0A));
                             } // Newline (Line Feed)
                             'r' => {
-                                result.push(TokType::Literal(0x0D));
+                                result.push(Tokens::Literal(0x0D));
                             } // Carriage Return
                             't' => {
-                                result.push(TokType::Literal(0x09));
+                                result.push(Tokens::Literal(0x09));
                             } // Horizontal Tab
                             'v' => {
-                                result.push(TokType::Literal(0x0B));
+                                result.push(Tokens::Literal(0x0B));
                             } // Vertical Tab
                             '\\' => {
-                                result.push(TokType::Literal(0x5C));
+                                result.push(Tokens::Literal(0x5C));
                             } // Backslash
                             '\'' => {
-                                result.push(TokType::Literal(0x27));
+                                result.push(Tokens::Literal(0x27));
                             } // Apostrophe or single quotation mark
                             '\"' => {
-                                result.push(TokType::Literal(0x22));
+                                result.push(Tokens::Literal(0x22));
                             } // Double quotation mark
                             '?' => {
-                                result.push(TokType::Literal(0x3F));
+                                result.push(Tokens::Literal(0x3F));
                             } // question mark
                             _ => {
                                 return Err(format!("unrecongnized character"));
@@ -2153,7 +2159,7 @@ pub mod lexer
                         }
                         it.next();
                     } else {
-                        result.push(TokType::Literal(c as i64));
+                        result.push(Tokens::Literal(c as i64));
                         it.next(); // skip char
                         it.next(); // skip '
                     }
@@ -2169,7 +2175,7 @@ pub mod lexer
                         number = number * 10 + digit;
                         it.next();
                     }
-                    result.push(TokType::Literal(number));
+                    result.push(Tokens::Literal(number));
                 }
                 'a'...'z' | 'A'...'Z' | '_' => {
                     it.next();
@@ -2187,46 +2193,46 @@ pub mod lexer
                         }
                     }
                     match s.as_ref() {
-                        "int" => result.push(TokType::Kwd(KwdType::Int)),
-                        "char" => result.push(TokType::Kwd(KwdType::Int)),
-                        "return" => result.push(TokType::Kwd(KwdType::Ret)),
-                        "void" => result.push(TokType::Kwd(KwdType::Void)),
-                        "if" => result.push(TokType::Kwd(KwdType::If)),
-                        "else" => result.push(TokType::Kwd(KwdType::Else)),
-                        "while" => result.push(TokType::Kwd(KwdType::While)),
-                        "for" => result.push(TokType::Kwd(KwdType::For)),
-                        "do" => result.push(TokType::Kwd(KwdType::Do)),
-                        "continue" => result.push(TokType::Kwd(KwdType::Continue)),
-                        "break" => result.push(TokType::Kwd(KwdType::Break)),
-                        _ => result.push(TokType::Identifier(s)),
+                        "int" => result.push(Tokens::Kwd(Keyword::Int)),
+                        "char" => result.push(Tokens::Kwd(Keyword::Int)),
+                        "return" => result.push(Tokens::Kwd(Keyword::Ret)),
+                        "void" => result.push(Tokens::Kwd(Keyword::Void)),
+                        "if" => result.push(Tokens::Kwd(Keyword::If)),
+                        "else" => result.push(Tokens::Kwd(Keyword::Else)),
+                        "while" => result.push(Tokens::Kwd(Keyword::While)),
+                        "for" => result.push(Tokens::Kwd(Keyword::For)),
+                        "do" => result.push(Tokens::Kwd(Keyword::Do)),
+                        "continue" => result.push(Tokens::Kwd(Keyword::Continue)),
+                        "break" => result.push(Tokens::Kwd(Keyword::Break)),
+                        _ => result.push(Tokens::Identifier(s)),
                     }
                 }
                 '(' => {
-                    result.push(TokType::LParen);
+                    result.push(Tokens::LParen);
                     it.next();
                 }
                 ')' => {
-                    result.push(TokType::RParen);
+                    result.push(Tokens::RParen);
                     it.next();
                 }
                 '{' => {
-                    result.push(TokType::LBrace);
+                    result.push(Tokens::LBrace);
                     it.next();
                 }
                 '}' => {
-                    result.push(TokType::RBrace);
+                    result.push(Tokens::RBrace);
                     it.next();
                 }
                 '[' => {
-                    result.push(TokType::LBracket);
+                    result.push(Tokens::LBracket);
                     it.next();
                 }
                 ']' => {
-                    result.push(TokType::RBracket);
+                    result.push(Tokens::RBracket);
                     it.next();
                 }
                 ';' => {
-                    result.push(TokType::Semicolon);
+                    result.push(Tokens::Semicolon);
                     it.next();
                 }
                 '=' => {
@@ -2234,15 +2240,15 @@ pub mod lexer
                     match it.peek() {
                         Some(tmp) => match tmp {
                             '=' => {
-                                result.push(TokType::Equal);
+                                result.push(Tokens::Equal);
                                 it.next();
                             }
                             '>' => {
-                                result.push(TokType::GreaterEqual);
+                                result.push(Tokens::GreaterEqual);
                                 it.next();
                             }
                             _ => {
-                                result.push(TokType::Assign);
+                                result.push(Tokens::Assign);
                             }
                         },
                         _ => return Err(format!("Can not peek next char")),
@@ -2254,11 +2260,11 @@ pub mod lexer
                         Some(tmp) => match tmp {
                             '=' => {
                                 it.next();
-                                result.push(TokType::LessEqual);
+                                result.push(Tokens::LessEqual);
                                 it.next();
                             }
                             _ => {
-                                result.push(TokType::Lt);
+                                result.push(Tokens::Lt);
                                 it.next();
                             }
                         },
@@ -2270,11 +2276,11 @@ pub mod lexer
                     match it.peek() {
                         Some(tmp) => match tmp {
                             '=' => {
-                                result.push(TokType::GreaterEqual);
+                                result.push(Tokens::GreaterEqual);
                                 it.next();
                             }
                             _ => {
-                                result.push(TokType::Gt);
+                                result.push(Tokens::Gt);
                                 it.next();
                             }
                         },
@@ -2282,11 +2288,11 @@ pub mod lexer
                     }
                 }
                 '-' => {
-                    result.push(TokType::Minus);
+                    result.push(Tokens::Minus);
                     it.next();
                 }
                 '~' => {
-                    result.push(TokType::Tilde);
+                    result.push(Tokens::Tilde);
                     it.next();
                 }
                 '!' => {
@@ -2294,26 +2300,26 @@ pub mod lexer
                     match it.peek() {
                         Some(tmp) => match tmp {
                             '=' => {
-                                result.push(TokType::NotEqual);
+                                result.push(Tokens::NotEqual);
                                 it.next();
                             }
                             _ => {
-                                result.push(TokType::Exclamation);
+                                result.push(Tokens::Exclamation);
                             }
                         },
                         _ => return Err(format!("Can not peek next char")),
                     }
                 }
                 '+' => {
-                    result.push(TokType::Plus);
+                    result.push(Tokens::Plus);
                     it.next();
                 }
                 '*' => {
-                    result.push(TokType::Multi);
+                    result.push(Tokens::Multi);
                     it.next();
                 }
                 '/' => {
-                    result.push(TokType::Splash);
+                    result.push(Tokens::Splash);
                     it.next();
                 }
                 '&' => {
@@ -2321,13 +2327,13 @@ pub mod lexer
                     match it.peek() {
                         Some(tmp) => match tmp {
                             '&' => {
-                                result.push(TokType::And);
+                                result.push(Tokens::And);
                                 it.next();
                             }
                             _ => {
                                 // now don't support bitwise and, so just return Err
                                 // & operator to get the address of a variable
-                                result.push(TokType::Addr);
+                                result.push(Tokens::Addr);
                             }
                         },
                         _ => return Err(format!("Can not peek next char")),
@@ -2338,7 +2344,7 @@ pub mod lexer
                     match it.peek() {
                         Some(tmp) => match tmp {
                             '|' => {
-                                result.push(TokType::Or);
+                                result.push(Tokens::Or);
                                 it.next();
                             }
                             _ => {
@@ -2350,15 +2356,15 @@ pub mod lexer
                     }
                 }
                 '?' => {
-                    result.push(TokType::QuestionMark);
+                    result.push(Tokens::QuestionMark);
                     it.next();
                 }
                 ':' => {
-                    result.push(TokType::Colon);
+                    result.push(Tokens::Colon);
                     it.next();
                 }
                 ',' => {
-                    result.push(TokType::Comma);
+                    result.push(Tokens::Comma);
                     it.next();
                 }
                 ' ' | '\n' | '\t' | '\r' => {
@@ -2498,7 +2504,7 @@ pub mod parser
     /*
     */
     #[derive(Eq, PartialEq, Clone, Debug)]
-    pub enum NodeType 
+    pub enum Node 
     {
         Prog(String),
         // TODO: now only support int parameters
@@ -2521,8 +2527,8 @@ pub mod parser
         Var(String),
         ArrayRef(String),          // referencing to array
         AssignNode(String, bool), // String -> variable name, bool -> true if this is a assign to array element
-        UnExp(lexer::TokType),    // Unary Expression
-        BinExp(lexer::TokType),   // Binary Operator
+        UnExp(lexer::Tokens),    // Unary Expression
+        BinExp(lexer::Tokens),   // Binary Operator
         Exp,                      // <exp> ::= <id> ["[" <exp> "]"] "=" <exp> | <conditional-exp>
         ExpOption,                // <exp-option> :: <exp> | ""
         ConditionalExp, // <conditional-exp> ::= <logical-or-exp> [ "?" <exp> ":" <conditional-exp> ]
@@ -2558,23 +2564,23 @@ pub mod parser
     }
 
     #[derive(Eq, PartialEq, Clone, Debug)]
-    pub struct ParseNode {
-        pub child: Vec<ParseNode>,
-        pub entry: NodeType,
+    pub struct Parse {
+        pub child: Vec<Parse>,
+        pub entry: Node,
     }
 
-    impl ParseNode {
-        pub fn new() -> ParseNode {
-            ParseNode {
+    impl Parse {
+        pub fn new() -> Parse {
+            Parse {
                 child: Vec::new(),
-                entry: NodeType::Prog("root".to_string()),
+                entry: Node::Prog("root".to_string()),
             }
         }
     }
 
-    fn p_logical_or_exp(toks: &[lexer::TokType], pos: usize) -> Result<(ParseNode, usize), String> {
-        let mut log_or_exp_node = ParseNode::new();
-        log_or_exp_node.entry = NodeType::LogicalOrExp;
+    fn p_logical_or_exp(toks: &[lexer::Tokens], pos: usize) -> Result<(Parse, usize), String> {
+        let mut log_or_exp_node = Parse::new();
+        log_or_exp_node.entry = Node::LogicalOrExp;
         // Parse <logical-and-exp> first
 
         // <LogicalOrExp> -> <LogicalAndExp>
@@ -2584,7 +2590,7 @@ pub mod parser
         // peek next node
         let mut tok = &toks[pos];
         pos = pos + 1;
-        if *tok != lexer::TokType::Or {
+        if *tok != lexer::Tokens::Or {
             // only one child_node
             log_or_exp_node.child.push(log_and_exp_node);
             pos = pos - 1;
@@ -2593,9 +2599,9 @@ pub mod parser
 
         // log_or_exp -> BinExp -> (left: logAndExp, right logAndExp)
         let mut lhs = log_and_exp_node;
-        while *tok == lexer::TokType::Or {
-            let mut binexp_node = ParseNode::new();
-            binexp_node.entry = NodeType::BinExp(lexer::TokType::Or);
+        while *tok == lexer::Tokens::Or {
+            let mut binexp_node = Parse::new();
+            binexp_node.entry = Node::BinExp(lexer::Tokens::Or);
 
             let (rhs, tmp_pos) = r#try!(p_logical_and_exp(toks, pos));
 
@@ -2611,21 +2617,21 @@ pub mod parser
         return Ok((log_or_exp_node, pos));
     }
 
-    fn p_conditional_exp(toks: &[lexer::TokType], pos: usize) -> Result<(ParseNode, usize), String> {
+    fn p_conditional_exp(toks: &[lexer::Tokens], pos: usize) -> Result<(Parse, usize), String> {
         // <conditional-exp> ::= <logical-or-exp> [ "?" <exp> ":" <conditional-exp> ]
-        let mut conditional_exp_node = ParseNode::new();
-        conditional_exp_node.entry = NodeType::ConditionalExp;
+        let mut conditional_exp_node = Parse::new();
+        conditional_exp_node.entry = Node::ConditionalExp;
         // parse <logical-or-exp> first
         let (logical_or_exp_node, pos) = r#try!(p_logical_or_exp(toks, pos));
         conditional_exp_node.child.push(logical_or_exp_node);
 
         // it's optional if you got a "?"
-        if toks[pos] == lexer::TokType::QuestionMark {
+        if toks[pos] == lexer::Tokens::QuestionMark {
             // parse <exp>
             let pos = pos + 1;
             let (exp_node, pos) = r#try!(p_exp(toks, pos));
 
-            if toks[pos] != lexer::TokType::Colon {
+            if toks[pos] != lexer::Tokens::Colon {
                 return Err(format!(
                     "Expected `:` in conditional expression, but got {:?} at {}",
                     toks[pos], pos
@@ -2642,10 +2648,10 @@ pub mod parser
         }
     }
 
-    fn p_exp_opt(toks: &[lexer::TokType], pos: usize) -> Result<(ParseNode, usize), String> {
+    fn p_exp_opt(toks: &[lexer::Tokens], pos: usize) -> Result<(Parse, usize), String> {
         // <exp-option> ::= <exp> | ""
-        let mut exp_opt_node = ParseNode::new();
-        exp_opt_node.entry = NodeType::ExpOption;
+        let mut exp_opt_node = Parse::new();
+        exp_opt_node.entry = Node::ExpOption;
         let res = p_exp(toks, pos);
         match res {
             Ok((exp_node, pos)) => {
@@ -2661,29 +2667,29 @@ pub mod parser
         }
     }
 
-    fn p_exp(toks: &[lexer::TokType], pos: usize) -> Result<(ParseNode, usize), String> {
+    fn p_exp(toks: &[lexer::Tokens], pos: usize) -> Result<(Parse, usize), String> {
         // println!("in fn: p_exp, with pos:{}", pos);
         // <exp> ::= <id> [ "[" <exp> "]" ] "=" <exp> | <conditional-exp>
-        let mut exp_node = ParseNode::new();
-        exp_node.entry = NodeType::Exp;
+        let mut exp_node = Parse::new();
+        exp_node.entry = Node::Exp;
 
         let tok = &toks[pos];
         match tok {
-            lexer::TokType::Identifier(var_name) => {
+            lexer::Tokens::Identifier(var_name) => {
                 // check next token is Assign
                 let mut pos = pos + 1;
                 let tok = &toks[pos];
                 match tok {
-                    lexer::TokType::Assign => {
+                    lexer::Tokens::Assign => {
                         pos = pos + 1;
                         // something like a = 1
-                        let mut assign_node = ParseNode::new();
-                        assign_node.entry = NodeType::AssignNode(var_name.to_string(), false); // assign a int variable
+                        let mut assign_node = Parse::new();
+                        assign_node.entry = Node::AssignNode(var_name.to_string(), false); // assign a int variable
                         let (next_exp_node, pos) = r#try!(p_exp(toks, pos));
                         assign_node.child.push(next_exp_node);
                         return Ok((assign_node, pos));
                     }
-                    lexer::TokType::LBracket => {
+                    lexer::Tokens::LBracket => {
                         // something like a[<exp>] = 1;
                         let back_pos = pos - 1;
                         pos = pos + 1;
@@ -2691,7 +2697,7 @@ pub mod parser
                         let (index_node, new_pos) = r#try!(p_exp(toks, pos));
                         pos = new_pos;
                         // parse ']'
-                        if toks[pos] != lexer::TokType::RBracket {
+                        if toks[pos] != lexer::Tokens::RBracket {
                             return Err(format!(
                                 "Expected ']' for bracket closing, found {:?} at {}",
                                 toks[pos], pos
@@ -2700,7 +2706,7 @@ pub mod parser
 
                         // try '='
                         pos = pos + 1;
-                        if toks[pos] != lexer::TokType::Assign {
+                        if toks[pos] != lexer::Tokens::Assign {
                             pos = back_pos;
                             let (conditional_node, pos) = r#try!(p_conditional_exp(toks, pos));
                             exp_node.child.push(conditional_node);
@@ -2708,8 +2714,8 @@ pub mod parser
                         }
                         pos = pos + 1;
                         // try parse exp
-                        let mut assign_node = ParseNode::new();
-                        assign_node.entry = NodeType::AssignNode(var_name.to_string(), true); // assign to a array element
+                        let mut assign_node = Parse::new();
+                        assign_node.entry = Node::AssignNode(var_name.to_string(), true); // assign to a array element
                         let (res_node, new_pos) = r#try!(p_exp(toks, pos));
                         pos = new_pos;
                         assign_node.child.push(index_node);
@@ -2733,14 +2739,14 @@ pub mod parser
         }
     }
 
-    fn p_fn(toks: &[lexer::TokType], pos: usize) -> Result<(ParseNode, usize), String> {
+    fn p_fn(toks: &[lexer::Tokens], pos: usize) -> Result<(Parse, usize), String> {
         // println!("in p_fn with pos: {}", pos);
         // <function> ::= "int" <id> "(" ")" "{" { <statement> } "}"
         if pos >= toks.len() {
             return Err("Out of program length".to_string());
         }
         let tok = &toks[pos];
-        if *tok != lexer::TokType::Kwd(lexer::KwdType::Int) {
+        if *tok != lexer::Tokens::Kwd(lexer::Keyword::Int) {
             return Err(format!("Expected `int`, found {:?} at {}", toks[pos], pos));
         }
         let mut pos = pos + 1;
@@ -2748,7 +2754,7 @@ pub mod parser
         let tok = &toks[pos];
         let mut fn_name = String::new();
         match tok {
-            lexer::TokType::Identifier(n) => {
+            lexer::Tokens::Identifier(n) => {
                 fn_name = n.to_string();
             }
             _ => {
@@ -2758,21 +2764,21 @@ pub mod parser
         pos = pos + 1;
 
         let tok = &toks[pos];
-        if *tok != lexer::TokType::LParen {
+        if *tok != lexer::Tokens::LParen {
             return Err(format!("Expected `(`, found {:?} at {}", toks[pos], pos));
         }
         pos = pos + 1;
         // XXX: add void support, now only support int arg list
         let mut arg_list: Vec<String> = Vec::new();
         let mut arg_count = 0;
-        while pos < toks.len() && toks[pos] != lexer::TokType::RParen {
+        while pos < toks.len() && toks[pos] != lexer::Tokens::RParen {
             // try to parse argument list
             // match int
             match &toks[pos] {
-                lexer::TokType::Kwd(lexer::KwdType::Int) => {
+                lexer::Tokens::Kwd(lexer::Keyword::Int) => {
                     pos = pos + 1;
                 }
-                lexer::TokType::Kwd(lexer::KwdType::Void) => {
+                lexer::Tokens::Kwd(lexer::Keyword::Void) => {
                     if arg_count > 0 {
                         return Err(format!(
                             "Error: void after other argument in one function definition"
@@ -2787,7 +2793,7 @@ pub mod parser
             }
             // match identifier
             match &toks[pos] {
-                lexer::TokType::Identifier(var_name) => {
+                lexer::Tokens::Identifier(var_name) => {
                     arg_list.push(var_name.to_string());
                     pos = pos + 1;
                 }
@@ -2801,10 +2807,10 @@ pub mod parser
             arg_count = arg_count + 1;
             // match ,
             match &toks[pos] {
-                lexer::TokType::Comma => {
+                lexer::Tokens::Comma => {
                     pos = pos + 1;
                 }
-                lexer::TokType::RParen => {
+                lexer::Tokens::RParen => {
                     continue;
                 }
                 _ => {
@@ -2814,30 +2820,30 @@ pub mod parser
                     ));
                 }
             }
-            if toks[pos] == lexer::TokType::RParen {
+            if toks[pos] == lexer::Tokens::RParen {
                 break;
             }
         }
         let tok = &toks[pos];
-        if *tok != lexer::TokType::RParen {
+        if *tok != lexer::Tokens::RParen {
             return Err(format!("Expected `)`, found {:?} at {}", toks[pos], pos));
         }
         pos = pos + 1;
 
         let tok = &toks[pos];
-        if *tok != lexer::TokType::LBrace {
+        if *tok != lexer::Tokens::LBrace {
             return Err(format!("Expected `{{`, found {:?} at {}", toks[pos], pos));
         }
         pos = pos + 1;
 
-        let mut fn_node = ParseNode::new();
+        let mut fn_node = Parse::new();
         if arg_list.is_empty() {
-            fn_node.entry = NodeType::Fn(fn_name, None);
+            fn_node.entry = Node::Fn(fn_name, None);
         } else {
-            fn_node.entry = NodeType::Fn(fn_name, Some(arg_list));
+            fn_node.entry = Node::Fn(fn_name, Some(arg_list));
         }
 
-        while pos < toks.len() && toks[pos] != lexer::TokType::RBrace {
+        while pos < toks.len() && toks[pos] != lexer::Tokens::RBrace {
             let (block_node, tmp_pos) = r#try!(p_block(toks, pos));
             pos = tmp_pos;
             fn_node.child.push(block_node);
@@ -2846,7 +2852,7 @@ pub mod parser
         if pos >= toks.len() {
             return Err(format!("Missing `}}`"));
         }
-        if toks[pos] != lexer::TokType::RBrace {
+        if toks[pos] != lexer::Tokens::RBrace {
             return Err(format!("Expected `}}`, found {:?} at {}", toks[pos], pos));
         }
         pos = pos + 1;
@@ -2855,31 +2861,31 @@ pub mod parser
         Ok((fn_node, pos))
     }
 
-    fn p_declare(toks: &[lexer::TokType], pos: usize) -> Result<(ParseNode, usize), String> {
+    fn p_declare(toks: &[lexer::Tokens], pos: usize) -> Result<(Parse, usize), String> {
         // println!("in p_declare with pos = {}", pos);
         let tok = &toks[pos];
         match tok {
-            lexer::TokType::Kwd(lexer::KwdType::Int) => {
+            lexer::Tokens::Kwd(lexer::Keyword::Int) => {
                 // "int" <id> [ = <exp> ] ";"
                 // or "int" <id> "[" <int> "]" ";"
                 let pos = pos + 1;
 
                 let tok = &toks[pos];
                 match tok {
-                    lexer::TokType::Identifier(var_name) => {
-                        let mut stmt_node = ParseNode::new();
-                        stmt_node.entry = NodeType::Declare(var_name.to_string(), DataType::I64);
+                    lexer::Tokens::Identifier(var_name) => {
+                        let mut stmt_node = Parse::new();
+                        stmt_node.entry = Node::Declare(var_name.to_string(), DataType::I64);
                         let pos = pos + 1;
                         let tok = &toks[pos];
                         match tok {
-                            lexer::TokType::Assign => {
+                            lexer::Tokens::Assign => {
                                 // parse exp
                                 // e.g. int a = exp;
                                 let pos = pos + 1;
                                 let (exp_node, pos) = r#try!(p_exp(toks, pos));
 
                                 let tok = &toks[pos];
-                                if *tok != lexer::TokType::Semicolon {
+                                if *tok != lexer::Tokens::Semicolon {
                                     return Err(format!(
                                         "Expected `;`, found {:?} at {}",
                                         toks[pos], pos
@@ -2889,31 +2895,31 @@ pub mod parser
                                 stmt_node.child.push(exp_node);
                                 return Ok((stmt_node, pos));
                             }
-                            lexer::TokType::Semicolon => {
+                            lexer::Tokens::Semicolon => {
                                 // if just declare, but no assignment, just record the var_name
                                 // e.g. int var;
                                 let pos = pos + 1;
                                 return Ok((stmt_node, pos));
                             }
-                            lexer::TokType::LBracket => {
+                            lexer::Tokens::LBracket => {
                                 // array declare
                                 // e.g. int a[100];
                                 // XXX: now only just support literal array length
                                 if cfg!(feature = "debug") {
                                     println!("here in p_declare -> LBraket");
                                 }
-                                let mut declare_node = ParseNode::new();
+                                let mut declare_node = Parse::new();
                                 let pos = pos + 1;
                                 let tok = &toks[pos];
                                 match tok {
-                                    lexer::TokType::Literal(n) => {
-                                        declare_node.entry = NodeType::Declare(
+                                    lexer::Tokens::Literal(n) => {
+                                        declare_node.entry = Node::Declare(
                                             var_name.to_string(),
                                             DataType::Arr64(*n),
                                         );
                                         let pos = pos + 1;
                                         let tok = &toks[pos];
-                                        if *tok != lexer::TokType::RBracket {
+                                        if *tok != lexer::Tokens::RBracket {
                                             return Err(format!(
                                                 "Expected `]` for array declaration, found {:?} at {}",
                                                 toks[pos], pos
@@ -2922,7 +2928,7 @@ pub mod parser
 
                                         let pos = pos + 1;
                                         let tok = &toks[pos];
-                                        if *tok != lexer::TokType::Semicolon {
+                                        if *tok != lexer::Tokens::Semicolon {
                                             return Err(format!("Expected `;` at end of array declaration, found {:?} at {}", toks[pos], pos));
                                         }
                                         let pos = pos + 1;
@@ -2964,13 +2970,13 @@ pub mod parser
         }
     }
 
-    fn p_block(toks: &[lexer::TokType], pos: usize) -> Result<(ParseNode, usize), String> {
+    fn p_block(toks: &[lexer::Tokens], pos: usize) -> Result<(Parse, usize), String> {
         let tok = &toks[pos];
         match tok {
-            lexer::TokType::Kwd(lexer::KwdType::Int) => {
+            lexer::Tokens::Kwd(lexer::Keyword::Int) => {
                 // try to parse declare
-                // let mut block_node = ParseNode::new();
-                // block_node.entry = NodeType::Block;
+                // let mut block_node = Parse::new();
+                // block_node.entry = Node::Block;
 
                 let (declare_node, pos) = r#try!(p_declare(toks, pos));
                 // block_node.child.push(declare_node);
@@ -2979,8 +2985,8 @@ pub mod parser
             }
             _ => {
                 // try to parse statement
-                // let mut block_node = ParseNode::new();
-                // block_node.entry = NodeType::Block;
+                // let mut block_node = Parse::new();
+                // block_node.entry = Node::Block;
 
                 let (stmt_node, pos) = r#try!(p_stmt(toks, pos));
                 return Ok((stmt_node, pos));
@@ -2989,18 +2995,18 @@ pub mod parser
             }
         }
     }
-    fn p_stmt(toks: &[lexer::TokType], pos: usize) -> Result<(ParseNode, usize), String> {
+    fn p_stmt(toks: &[lexer::Tokens], pos: usize) -> Result<(Parse, usize), String> {
         // println!("in fn : p_stmt, with pos {}", pos);
         let tok = &toks[pos];
         match tok {
-            lexer::TokType::LBrace => {
+            lexer::Tokens::LBrace => {
                 // "{" { <block-item> } "}"
                 let mut pos = pos + 1;
-                let mut stmt_node = ParseNode::new();
-                stmt_node.entry = NodeType::Stmt(StmtType::Compound);
+                let mut stmt_node = Parse::new();
+                stmt_node.entry = Node::Stmt(StmtType::Compound);
 
                 // try to get some block item
-                while toks[pos] != lexer::TokType::RBrace {
+                while toks[pos] != lexer::Tokens::RBrace {
                     let (block_node, tmp_pos) = r#try!(p_block(toks, pos));
                     stmt_node.child.push(block_node);
                     pos = tmp_pos;
@@ -3010,13 +3016,13 @@ pub mod parser
                 pos = pos + 1;
                 return Ok((stmt_node, pos));
             }
-            lexer::TokType::Kwd(lexer::KwdType::Ret) => {
+            lexer::Tokens::Kwd(lexer::Keyword::Ret) => {
                 // "return" <exp> ";"
                 let pos = pos + 1;
                 let (exp_node, mut pos) = r#try!(p_exp(toks, pos));
 
                 let tok = &toks[pos];
-                if *tok != lexer::TokType::Semicolon {
+                if *tok != lexer::Tokens::Semicolon {
                     return Err(format!(
                         "Expected `;` in statement, found {:?} at {}",
                         toks[pos], pos
@@ -3024,18 +3030,18 @@ pub mod parser
                 }
                 pos = pos + 1;
 
-                let mut stmt_node = ParseNode::new();
-                stmt_node.entry = NodeType::Stmt(StmtType::Return);
+                let mut stmt_node = Parse::new();
+                stmt_node.entry = Node::Stmt(StmtType::Return);
                 stmt_node.child.push(exp_node);
                 return Ok((stmt_node, pos));
             }
-            lexer::TokType::Kwd(lexer::KwdType::If) => {
+            lexer::Tokens::Kwd(lexer::Keyword::If) => {
                 // "if" "(" <exp> ")" <statement> [ "else" <statement> ]
                 // this is the conditional statement
-                let mut stmt_node = ParseNode::new();
-                stmt_node.entry = NodeType::Stmt(StmtType::Conditional("if".to_string()));
+                let mut stmt_node = Parse::new();
+                stmt_node.entry = Node::Stmt(StmtType::Conditional("if".to_string()));
                 let pos = pos + 1;
-                if pos >= toks.len() || toks[pos] != lexer::TokType::LParen {
+                if pos >= toks.len() || toks[pos] != lexer::Tokens::LParen {
                     return Err(format!("Missing `(`"));
                 }
                 // try to parse exp
@@ -3045,7 +3051,7 @@ pub mod parser
                 let pos = pos + 1;
                 let (exp_node, pos) = r#try!(p_exp(toks, pos));
                 // println!("pos = {}", pos);
-                if pos >= toks.len() || toks[pos] != lexer::TokType::RParen {
+                if pos >= toks.len() || toks[pos] != lexer::Tokens::RParen {
                     return Err(format!("Missing `)`"));
                 }
 
@@ -3060,7 +3066,7 @@ pub mod parser
 
                 // if has 'else'
                 // println!("SHOULD BE HERE , POS = {}", pos);
-                if pos < toks.len() && toks[pos] == lexer::TokType::Kwd(lexer::KwdType::Else) {
+                if pos < toks.len() && toks[pos] == lexer::Tokens::Kwd(lexer::Keyword::Else) {
                     // try to parse statement 2
                     let pos = pos + 1;
                     let (clause_2_node, pos) = r#try!(p_stmt(toks, pos));
@@ -3070,12 +3076,12 @@ pub mod parser
                     return Ok((stmt_node, pos));
                 }
             }
-            lexer::TokType::Kwd(lexer::KwdType::For) => {
+            lexer::Tokens::Kwd(lexer::Keyword::For) => {
                 // "for" "(" <exp-option> ";" <exp-option> ";" <exp-option> ")" <statement>
                 // "for" "(" <declaration> <exp-option> ";" <exp-option> ")" <statement>
-                let mut stmt_node = ParseNode::new();
+                let mut stmt_node = Parse::new();
                 let pos = pos + 1;
-                if pos >= toks.len() || toks[pos] != lexer::TokType::LParen {
+                if pos >= toks.len() || toks[pos] != lexer::Tokens::LParen {
                     return Err(format!("Missing `(`"));
                 }
                 let pos = pos + 1;
@@ -3085,27 +3091,27 @@ pub mod parser
                     Ok((declare_node, pos)) => {
                         // "for" "(" <declaration> <exp-option> ";" <exp-option> ")" <statement>
                         stmt_node.child.push(declare_node);
-                        stmt_node.entry = NodeType::Stmt(StmtType::ForDecl);
+                        stmt_node.entry = Node::Stmt(StmtType::ForDecl);
 
                         let (exp_opt_node, pos) = r#try!(p_exp_opt(toks, pos));
                         stmt_node.child.push(exp_opt_node);
 
-                        if pos >= toks.len() || toks[pos] != lexer::TokType::Semicolon {
+                        if pos >= toks.len() || toks[pos] != lexer::Tokens::Semicolon {
                             return Err(format!("Missing `;` needed by For"));
                         }
                         let pos = pos + 1;
 
                         let (exp_opt_node, pos) = r#try!(p_exp_opt(toks, pos));
                         stmt_node.child.push(exp_opt_node);
-                        if pos >= toks.len() || toks[pos] != lexer::TokType::RParen {
+                        if pos >= toks.len() || toks[pos] != lexer::Tokens::RParen {
                             return Err(format!("Missing `)` needed by For"));
                         }
                         let pos = pos + 1;
                         if cfg!(feature = "debug") {
                             println!("pos: {} tok: {:?} before compound layer", pos, toks[pos]);
                         }
-                        let mut compound_layer_node = ParseNode::new();
-                        compound_layer_node.entry = NodeType::Stmt(StmtType::Compound);
+                        let mut compound_layer_node = Parse::new();
+                        compound_layer_node.entry = Node::Stmt(StmtType::Compound);
                         let (next_stmt_node, pos) = r#try!(p_stmt(toks, pos));
                         compound_layer_node.child.push(next_stmt_node);
                         stmt_node.child.push(compound_layer_node);
@@ -3113,11 +3119,11 @@ pub mod parser
                     }
                     Err(_) => {
                         // "for" "(" <exp-option> ";" <exp-option> ";" <exp-option> ")" <statement>
-                        stmt_node.entry = NodeType::Stmt(StmtType::For);
+                        stmt_node.entry = Node::Stmt(StmtType::For);
                         let (exp_opt_node, pos) = r#try!(p_exp_opt(toks, pos));
                         stmt_node.child.push(exp_opt_node);
 
-                        if pos >= toks.len() || toks[pos] != lexer::TokType::Semicolon {
+                        if pos >= toks.len() || toks[pos] != lexer::Tokens::Semicolon {
                             return Err(format!("Missing `;` needed by for"));
                         }
                         let pos = pos + 1;
@@ -3125,7 +3131,7 @@ pub mod parser
                         let (exp_opt_node, pos) = r#try!(p_exp_opt(toks, pos));
                         stmt_node.child.push(exp_opt_node);
 
-                        if pos >= toks.len() || toks[pos] != lexer::TokType::Semicolon {
+                        if pos >= toks.len() || toks[pos] != lexer::Tokens::Semicolon {
                             return Err(format!("Missing `;` needed by for"));
                         }
                         let pos = pos + 1;
@@ -3133,32 +3139,32 @@ pub mod parser
                         let (exp_opt_node, pos) = r#try!(p_exp_opt(toks, pos));
                         stmt_node.child.push(exp_opt_node);
 
-                        if pos >= toks.len() || toks[pos] != lexer::TokType::RParen {
+                        if pos >= toks.len() || toks[pos] != lexer::Tokens::RParen {
                             return Err(format!("Missing `)` needed by for"));
                         }
                         let pos = pos + 1;
-                        let mut compound_layer_node = ParseNode::new();
+                        let mut compound_layer_node = Parse::new();
                         let (next_stmt_node, pos) = r#try!(p_stmt(toks, pos));
                         compound_layer_node.child.push(next_stmt_node);
-                        compound_layer_node.entry = NodeType::Stmt(StmtType::Compound);
+                        compound_layer_node.entry = Node::Stmt(StmtType::Compound);
                         stmt_node.child.push(compound_layer_node);
                         return Ok((stmt_node, pos));
                     }
                 }
             }
-            lexer::TokType::Kwd(lexer::KwdType::While) => {
+            lexer::Tokens::Kwd(lexer::Keyword::While) => {
                 // "while" "(" <exp> ")" <statement>
-                let mut stmt_node = ParseNode::new();
-                stmt_node.entry = NodeType::Stmt(StmtType::While);
+                let mut stmt_node = Parse::new();
+                stmt_node.entry = Node::Stmt(StmtType::While);
                 let pos = pos + 1;
-                if pos >= toks.len() || toks[pos] != lexer::TokType::LParen {
+                if pos >= toks.len() || toks[pos] != lexer::Tokens::LParen {
                     return Err(format!("Missing `(` needed by While"));
                 }
 
                 let pos = pos + 1;
                 let (exp_node, pos) = r#try!(p_exp(toks, pos));
                 stmt_node.child.push(exp_node);
-                if pos >= toks.len() || toks[pos] != lexer::TokType::RParen {
+                if pos >= toks.len() || toks[pos] != lexer::Tokens::RParen {
                     return Err(format!("Missing `)`"));
                 }
                 let pos = pos + 1;
@@ -3167,32 +3173,32 @@ pub mod parser
                 stmt_node.child.push(next_stmt_node);
                 return Ok((stmt_node, pos));
             }
-            lexer::TokType::Kwd(lexer::KwdType::Do) => {
+            lexer::Tokens::Kwd(lexer::Keyword::Do) => {
                 // "do" <statement> "while" "(" <exp> ")" ";"
-                let mut stmt_node = ParseNode::new();
-                stmt_node.entry = NodeType::Stmt(StmtType::Do);
+                let mut stmt_node = Parse::new();
+                stmt_node.entry = Node::Stmt(StmtType::Do);
                 let pos = pos + 1;
                 let (next_stmt_node, pos) = r#try!(p_stmt(toks, pos));
                 stmt_node.child.push(next_stmt_node);
                 // parse while
-                if pos >= toks.len() || toks[pos] != lexer::TokType::Kwd(lexer::KwdType::While) {
+                if pos >= toks.len() || toks[pos] != lexer::Tokens::Kwd(lexer::Keyword::While) {
                     return Err(format!("Missing `while` needed by do"));
                 }
                 let pos = pos + 1;
 
-                if pos >= toks.len() || toks[pos] != lexer::TokType::LParen {
+                if pos >= toks.len() || toks[pos] != lexer::Tokens::LParen {
                     return Err(format!("Missing `(` needed by do"));
                 }
                 let pos = pos + 1;
 
                 let (exp_node, pos) = r#try!(p_exp_opt(toks, pos));
 
-                if pos >= toks.len() || toks[pos] != lexer::TokType::RParen {
+                if pos >= toks.len() || toks[pos] != lexer::Tokens::RParen {
                     return Err(format!("Missing `)` needed by do"));
                 }
                 let pos = pos + 1;
 
-                if pos >= toks.len() || toks[pos] != lexer::TokType::Semicolon {
+                if pos >= toks.len() || toks[pos] != lexer::Tokens::Semicolon {
                     return Err(format!("Missing `;` needed by do"));
                 }
                 let pos = pos + 1;
@@ -3200,21 +3206,21 @@ pub mod parser
                 stmt_node.child.push(exp_node);
                 return Ok((stmt_node, pos));
             }
-            lexer::TokType::Kwd(lexer::KwdType::Continue) => {
-                let mut stmt_node = ParseNode::new();
-                stmt_node.entry = NodeType::Stmt(StmtType::Continue);
+            lexer::Tokens::Kwd(lexer::Keyword::Continue) => {
+                let mut stmt_node = Parse::new();
+                stmt_node.entry = Node::Stmt(StmtType::Continue);
                 let pos = pos + 1;
-                if pos >= toks.len() || toks[pos] != lexer::TokType::Semicolon {
+                if pos >= toks.len() || toks[pos] != lexer::Tokens::Semicolon {
                     return Err(format!("Missing `;` needed by continue"));
                 }
                 let pos = pos + 1;
                 return Ok((stmt_node, pos));
             }
-            lexer::TokType::Kwd(lexer::KwdType::Break) => {
-                let mut stmt_node = ParseNode::new();
-                stmt_node.entry = NodeType::Stmt(StmtType::Break);
+            lexer::Tokens::Kwd(lexer::Keyword::Break) => {
+                let mut stmt_node = Parse::new();
+                stmt_node.entry = Node::Stmt(StmtType::Break);
                 let pos = pos + 1;
-                if pos >= toks.len() || toks[pos] != lexer::TokType::Semicolon {
+                if pos >= toks.len() || toks[pos] != lexer::Tokens::Semicolon {
                     return Err(format!("Missing `;` needed by break"));
                 }
                 let pos = pos + 1;
@@ -3222,13 +3228,13 @@ pub mod parser
             }
             _ => {
                 // try to parse exp-option;
-                let mut stmt_node = ParseNode::new();
-                stmt_node.entry = NodeType::Stmt(StmtType::Exp);
+                let mut stmt_node = Parse::new();
+                stmt_node.entry = Node::Stmt(StmtType::Exp);
                 //let pos = pos + 1;
                 let (exp_opt_node, pos) = r#try!(p_exp_opt(toks, pos));
 
                 let tok = &toks[pos];
-                if *tok != lexer::TokType::Semicolon {
+                if *tok != lexer::Tokens::Semicolon {
                     return Err(format!("Expected `;`, found {:?} at {}", toks[pos], pos));
                 }
                 let pos = pos + 1;
@@ -3238,7 +3244,7 @@ pub mod parser
         }
     }
 
-    fn p_factor(toks: &[lexer::TokType], pos: usize) -> Result<(ParseNode, usize), String> {
+    fn p_factor(toks: &[lexer::Tokens], pos: usize) -> Result<(Parse, usize), String> {
         if cfg!(feature = "debug") {
             println!("in p_factor with pos: {}, tok = {:?}", pos, toks[pos]);
         }
@@ -3246,35 +3252,35 @@ pub mod parser
         let mut pos = pos + 1;
 
         match next {
-            lexer::TokType::LParen => {
+            lexer::Tokens::LParen => {
                 // parse expression inside parens
                 // factor -> exp
                 let (exp_node, tmp_pos) = r#try!(p_exp(toks, pos));
                 pos = tmp_pos;
                 next = &toks[pos];
                 pos = pos + 1;
-                if *next != lexer::TokType::RParen {
+                if *next != lexer::Tokens::RParen {
                     return Err(format!(
                         "Expected `)` in file:parser.rs, found {:?} at {}",
                         toks[pos], pos
                     ));
                 }
-                let mut factor_node = ParseNode::new();
-                factor_node.entry = NodeType::Factor;
+                let mut factor_node = Parse::new();
+                factor_node.entry = Node::Factor;
                 factor_node.child.push(exp_node);
                 // println!("out p_factor with pos: {}", pos);
                 return Ok((factor_node, pos));
             }
-            lexer::TokType::Minus | lexer::TokType::Tilde | lexer::TokType::Exclamation | lexer::TokType::Addr => {
+            lexer::Tokens::Minus | lexer::Tokens::Tilde | lexer::Tokens::Exclamation | lexer::Tokens::Addr => {
                 // factor -> UnExp -> factor
-                let mut factor_node = ParseNode::new();
-                let mut unexp_node = ParseNode::new();
-                factor_node.entry = NodeType::Factor;
-                unexp_node.entry = NodeType::UnExp(match next {
-                    lexer::TokType::Minus => lexer::TokType::Minus,
-                    lexer::TokType::Tilde => lexer::TokType::Tilde,
-                    lexer::TokType::Exclamation => lexer::TokType::Exclamation,
-                    lexer::TokType::Addr => lexer::TokType::Addr,
+                let mut factor_node = Parse::new();
+                let mut unexp_node = Parse::new();
+                factor_node.entry = Node::Factor;
+                unexp_node.entry = Node::UnExp(match next {
+                    lexer::Tokens::Minus => lexer::Tokens::Minus,
+                    lexer::Tokens::Tilde => lexer::Tokens::Tilde,
+                    lexer::Tokens::Exclamation => lexer::Tokens::Exclamation,
+                    lexer::Tokens::Addr => lexer::Tokens::Addr,
                     _ => panic!("Something strange"),
                 });
                 let (next_factor_node, pos) = r#try!(p_factor(toks, pos));
@@ -3282,51 +3288,51 @@ pub mod parser
                 factor_node.child.push(unexp_node);
                 return Ok((factor_node, pos));
             }
-            lexer::TokType::String(chars, tag) => {
-                let mut string_node = ParseNode::new();
-                let mut factor_node = ParseNode::new();
-                string_node.entry = NodeType::StringLiteral(chars.to_string(), tag.to_string());
-                factor_node.entry = NodeType::Factor;
+            lexer::Tokens::String(chars, tag) => {
+                let mut string_node = Parse::new();
+                let mut factor_node = Parse::new();
+                string_node.entry = Node::StringLiteral(chars.to_string(), tag.to_string());
+                factor_node.entry = Node::Factor;
                 factor_node.child.push(string_node);
 
                 return Ok((factor_node, pos));
             }
-            lexer::TokType::Literal(n) => {
+            lexer::Tokens::Literal(n) => {
                 // Factor -> Const
-                let mut const_node = ParseNode::new();
-                let mut factor_node = ParseNode::new();
-                const_node.entry = NodeType::Const(*n);
-                factor_node.entry = NodeType::Factor;
+                let mut const_node = Parse::new();
+                let mut factor_node = Parse::new();
+                const_node.entry = Node::Const(*n);
+                factor_node.entry = Node::Factor;
                 factor_node.child.push(const_node);
                 // println!("out p_factor with pos: {}", pos);
                 return Ok((factor_node, pos));
             }
-            lexer::TokType::Identifier(var_name) => {
+            lexer::Tokens::Identifier(var_name) => {
                 if cfg!(feature = "debug") {
                     println!("here\n");
                 }
-                if pos < toks.len() && toks[pos] == lexer::TokType::LParen {
+                if pos < toks.len() && toks[pos] == lexer::Tokens::LParen {
                     // Factor -> FnCall
-                    let mut factor_node = ParseNode::new();
+                    let mut factor_node = Parse::new();
                     pos = pos - 1;
-                    factor_node.entry = NodeType::Factor;
+                    factor_node.entry = Node::Factor;
                     let (fn_call_node, pos) = r#try!(p_fn_call(toks, pos));
                     factor_node.child.push(fn_call_node);
                     return Ok((factor_node, pos));
-                } else if pos < toks.len() && toks[pos] == lexer::TokType::LBracket {
+                } else if pos < toks.len() && toks[pos] == lexer::Tokens::LBracket {
                     // Factor -> Array referencing
-                    let mut factor_node = ParseNode::new();
+                    let mut factor_node = Parse::new();
                     pos = pos - 1;
-                    factor_node.entry = NodeType::Factor;
+                    factor_node.entry = Node::Factor;
                     let (arr_ref_node, pos) = r#try!(p_arr_ref(toks, pos));
                     factor_node.child.push(arr_ref_node);
                     return Ok((factor_node, pos));
                 } else {
                     // Factor -> Var
-                    let mut var_node = ParseNode::new();
-                    let mut factor_node = ParseNode::new();
-                    var_node.entry = NodeType::Var(var_name.to_string());
-                    factor_node.entry = NodeType::Factor;
+                    let mut var_node = Parse::new();
+                    let mut factor_node = Parse::new();
+                    var_node.entry = Node::Var(var_name.to_string());
+                    factor_node.entry = Node::Factor;
                     factor_node.child.push(var_node);
                     // println!("out p_factor with pos: {}", pos);
                     return Ok((factor_node, pos));
@@ -3336,12 +3342,12 @@ pub mod parser
         }
     }
 
-    fn p_arr_ref(toks: &[lexer::TokType], pos: usize) -> Result<(ParseNode, usize), String> {
+    fn p_arr_ref(toks: &[lexer::Tokens], pos: usize) -> Result<(Parse, usize), String> {
         // array reference ::= <id> "[" <exp> "]"
-        let mut arr_ref_node = ParseNode::new();
+        let mut arr_ref_node = Parse::new();
         let mut var_name = String::new();
         match &toks[pos] {
-            lexer::TokType::Identifier(name) => {
+            lexer::Tokens::Identifier(name) => {
                 var_name = name.to_string();
             }
             _ => {
@@ -3351,12 +3357,12 @@ pub mod parser
                 ));
             }
         }
-        arr_ref_node.entry = NodeType::ArrayRef(var_name);
+        arr_ref_node.entry = Node::ArrayRef(var_name);
 
         let mut pos = pos + 1;
         // match '['
         match toks[pos] {
-            lexer::TokType::LBracket => {
+            lexer::Tokens::LBracket => {
                 pos = pos + 1;
             }
             _ => {
@@ -3370,7 +3376,7 @@ pub mod parser
         let (exp_node, new_pos) = r#try!(p_exp(toks, pos));
         arr_ref_node.child.push(exp_node);
         match toks[new_pos] {
-            lexer::TokType::RBracket => {
+            lexer::Tokens::RBracket => {
                 pos = new_pos + 1;
             }
             _ => {
@@ -3382,13 +3388,13 @@ pub mod parser
         }
         return Ok((arr_ref_node, pos));
     }
-    fn p_fn_call(toks: &[lexer::TokType], pos: usize) -> Result<(ParseNode, usize), String> {
+    fn p_fn_call(toks: &[lexer::Tokens], pos: usize) -> Result<(Parse, usize), String> {
         // <function-call> ::= id "(" [ <exp> { "," <exp> } ] ")"
         //println!("in fn p_fn_call");
-        let mut fn_call_node = ParseNode::new();
+        let mut fn_call_node = Parse::new();
         let mut fn_name = String::new();
         match &toks[pos] {
-            lexer::TokType::Identifier(name) => {
+            lexer::Tokens::Identifier(name) => {
                 fn_name = name.to_string();
             }
             _ => {
@@ -3398,11 +3404,11 @@ pub mod parser
                 ));
             }
         }
-        fn_call_node.entry = NodeType::FnCall(fn_name);
+        fn_call_node.entry = Node::FnCall(fn_name);
         let mut pos = pos + 1;
         // match '('
         match toks[pos] {
-            lexer::TokType::LParen => {
+            lexer::Tokens::LParen => {
                 pos = pos + 1;
             }
             _ => {
@@ -3412,7 +3418,7 @@ pub mod parser
                 ));
             }
         }
-        while pos < toks.len() && toks[pos] != lexer::TokType::RParen {
+        while pos < toks.len() && toks[pos] != lexer::Tokens::RParen {
             // try to parse argument exp
             let (exp_node, new_pos) = r#try!(p_exp(toks, pos));
             fn_call_node.child.push(exp_node);
@@ -3420,10 +3426,10 @@ pub mod parser
 
             // match ,
             match &toks[pos] {
-                lexer::TokType::Comma => {
+                lexer::Tokens::Comma => {
                     pos = pos + 1;
                 }
-                lexer::TokType::RParen => {
+                lexer::Tokens::RParen => {
                     continue;
                 }
                 _ => {
@@ -3433,7 +3439,7 @@ pub mod parser
                     ));
                 }
             }
-            if toks[pos] == lexer::TokType::RParen {
+            if toks[pos] == lexer::Tokens::RParen {
                 break;
             }
         }
@@ -3441,9 +3447,9 @@ pub mod parser
         return Ok((fn_call_node, pos));
     }
 
-    fn p_logical_and_exp(toks: &[lexer::TokType], pos: usize) -> Result<(ParseNode, usize), String> {
-        let mut logAndExp_node = ParseNode::new();
-        logAndExp_node.entry = NodeType::LogicalAndExp;
+    fn p_logical_and_exp(toks: &[lexer::Tokens], pos: usize) -> Result<(Parse, usize), String> {
+        let mut logAndExp_node = Parse::new();
+        logAndExp_node.entry = Node::LogicalAndExp;
 
         // LogicalAndExp -> EqualityExp
         let mut pos = pos;
@@ -3451,16 +3457,16 @@ pub mod parser
         pos = tmp_pos;
         let mut tok = &toks[pos];
         pos = pos + 1;
-        if *tok != lexer::TokType::And {
+        if *tok != lexer::Tokens::And {
             logAndExp_node.child.push(eq_node);
             pos = pos - 1;
             return Ok((logAndExp_node, pos));
         }
         // Term -> BinExp -> (EqualityExp, EqualityExp)
         let mut eq_node = eq_node; // change to mutable
-        while *tok == lexer::TokType::And {
-            let mut binexp_node = ParseNode::new();
-            binexp_node.entry = NodeType::BinExp(lexer::TokType::And);
+        while *tok == lexer::Tokens::And {
+            let mut binexp_node = Parse::new();
+            binexp_node.entry = Node::BinExp(lexer::Tokens::And);
 
             let (rhs, tmp_pos) = r#try!(p_eq_exp(toks, pos));
 
@@ -3476,27 +3482,27 @@ pub mod parser
         return Ok((logAndExp_node, pos));
     }
 
-    fn p_eq_exp(toks: &[lexer::TokType], pos: usize) -> Result<(ParseNode, usize), String> {
-        let mut eq_node = ParseNode::new();
-        eq_node.entry = NodeType::EqualityExp;
+    fn p_eq_exp(toks: &[lexer::Tokens], pos: usize) -> Result<(Parse, usize), String> {
+        let mut eq_node = Parse::new();
+        eq_node.entry = Node::EqualityExp;
 
         let mut pos = pos;
         let (relational_node, tmp_pos) = r#try!(p_relational_exp(toks, pos));
         pos = tmp_pos;
         let mut tok = &toks[pos];
         pos = pos + 1;
-        if *tok != lexer::TokType::NotEqual && *tok != lexer::TokType::Equal {
+        if *tok != lexer::Tokens::NotEqual && *tok != lexer::Tokens::Equal {
             eq_node.child.push(relational_node);
             pos = pos - 1;
             return Ok((eq_node, pos));
         }
 
         let mut relational_node = relational_node;
-        while *tok == lexer::TokType::Equal || *tok == lexer::TokType::NotEqual {
-            let mut binexp_node = ParseNode::new();
-            binexp_node.entry = NodeType::BinExp(match tok {
-                lexer::TokType::Equal => lexer::TokType::Equal,
-                lexer::TokType::NotEqual => lexer::TokType::NotEqual,
+        while *tok == lexer::Tokens::Equal || *tok == lexer::Tokens::NotEqual {
+            let mut binexp_node = Parse::new();
+            binexp_node.entry = Node::BinExp(match tok {
+                lexer::Tokens::Equal => lexer::Tokens::Equal,
+                lexer::Tokens::NotEqual => lexer::Tokens::NotEqual,
                 _ => panic!("in p_eq_exp, something went wrong"),
             });
 
@@ -3514,19 +3520,19 @@ pub mod parser
         return Ok((eq_node, pos));
     }
 
-    fn p_relational_exp(toks: &[lexer::TokType], pos: usize) -> Result<(ParseNode, usize), String> {
-        let mut relational_node = ParseNode::new();
-        relational_node.entry = NodeType::RelationalExp;
+    fn p_relational_exp(toks: &[lexer::Tokens], pos: usize) -> Result<(Parse, usize), String> {
+        let mut relational_node = Parse::new();
+        relational_node.entry = Node::RelationalExp;
 
         let mut pos = pos;
         let (additive_exp_node, tmp_pos) = r#try!(p_additive_exp(toks, pos));
         pos = tmp_pos;
         let mut tok = &toks[pos];
         pos = pos + 1;
-        if *tok != lexer::TokType::Lt
-            && *tok != lexer::TokType::Gt
-            && *tok != lexer::TokType::GreaterEqual
-            && *tok != lexer::TokType::LessEqual
+        if *tok != lexer::Tokens::Lt
+            && *tok != lexer::Tokens::Gt
+            && *tok != lexer::Tokens::GreaterEqual
+            && *tok != lexer::Tokens::LessEqual
         {
             relational_node.child.push(additive_exp_node);
             pos = pos - 1;
@@ -3534,17 +3540,17 @@ pub mod parser
         }
 
         let mut additive_exp_node = additive_exp_node;
-        while *tok == lexer::TokType::Lt
-            || *tok == lexer::TokType::Gt
-            || *tok == lexer::TokType::GreaterEqual
-            || *tok == lexer::TokType::LessEqual
+        while *tok == lexer::Tokens::Lt
+            || *tok == lexer::Tokens::Gt
+            || *tok == lexer::Tokens::GreaterEqual
+            || *tok == lexer::Tokens::LessEqual
         {
-            let mut binexp_node = ParseNode::new();
-            binexp_node.entry = NodeType::BinExp(match tok {
-                lexer::TokType::Lt => lexer::TokType::Lt,
-                lexer::TokType::Gt => lexer::TokType::Gt,
-                lexer::TokType::GreaterEqual => lexer::TokType::GreaterEqual,
-                lexer::TokType::LessEqual => lexer::TokType::LessEqual,
+            let mut binexp_node = Parse::new();
+            binexp_node.entry = Node::BinExp(match tok {
+                lexer::Tokens::Lt => lexer::Tokens::Lt,
+                lexer::Tokens::Gt => lexer::Tokens::Gt,
+                lexer::Tokens::GreaterEqual => lexer::Tokens::GreaterEqual,
+                lexer::Tokens::LessEqual => lexer::Tokens::LessEqual,
                 _ => panic!("in p_relational_exp, something went wrong"),
             });
             let (next_additive_exp_node, tmp_pos) = r#try!(p_additive_exp(toks, pos));
@@ -3559,10 +3565,10 @@ pub mod parser
         pos = pos - 1;
         return Ok((relational_node, pos));
     }
-    fn p_term(toks: &[lexer::TokType], pos: usize) -> Result<(ParseNode, usize), String> {
+    fn p_term(toks: &[lexer::Tokens], pos: usize) -> Result<(Parse, usize), String> {
         // println!("in p_term with pos: {}", pos);
-        let mut term_node = ParseNode::new();
-        term_node.entry = NodeType::Term;
+        let mut term_node = Parse::new();
+        term_node.entry = Node::Term;
 
         // term -> factor
         let mut pos = pos;
@@ -3570,7 +3576,7 @@ pub mod parser
         pos = tmp_pos;
         let mut tok = &toks[pos];
         pos = pos + 1;
-        if *tok != lexer::TokType::Multi && *tok != lexer::TokType::Splash {
+        if *tok != lexer::Tokens::Multi && *tok != lexer::Tokens::Splash {
             term_node.child.push(factor_node);
             pos = pos - 1;
             // println!("1. out p_term with pos: {}", pos);
@@ -3579,11 +3585,11 @@ pub mod parser
 
         // term -> BinExp -> (factor_left, factor_right)
         let mut factor_node = factor_node;
-        while *tok == lexer::TokType::Multi || *tok == lexer::TokType::Splash {
-            let mut binexp_node = ParseNode::new();
-            binexp_node.entry = NodeType::BinExp(match tok {
-                lexer::TokType::Multi => lexer::TokType::Multi,
-                lexer::TokType::Splash => lexer::TokType::Splash,
+        while *tok == lexer::Tokens::Multi || *tok == lexer::Tokens::Splash {
+            let mut binexp_node = Parse::new();
+            binexp_node.entry = Node::BinExp(match tok {
+                lexer::Tokens::Multi => lexer::Tokens::Multi,
+                lexer::Tokens::Splash => lexer::Tokens::Splash,
                 _ => panic!("in p_term, something went wrong"),
             });
 
@@ -3602,29 +3608,29 @@ pub mod parser
         return Ok((term_node, pos));
     }
 
-    fn p_additive_exp(toks: &[lexer::TokType], pos: usize) -> Result<(ParseNode, usize), String> {
+    fn p_additive_exp(toks: &[lexer::Tokens], pos: usize) -> Result<(Parse, usize), String> {
         // println!("in p_exp with pos: {}", pos);
-        let mut exp_node = ParseNode::new();
-        exp_node.entry = NodeType::AdditiveExp;
+        let mut exp_node = Parse::new();
+        exp_node.entry = Node::AdditiveExp;
         // exp -> term
         let mut pos = pos;
         let (term_node, tmp_pos) = r#try!(p_term(toks, pos));
         pos = tmp_pos;
         let mut tok = &toks[pos];
-        if *tok != lexer::TokType::Plus && *tok != lexer::TokType::Minus {
+        if *tok != lexer::Tokens::Plus && *tok != lexer::Tokens::Minus {
             exp_node.child.push(term_node);
             // println!("1.out p_exp with pos: {}", pos);
             return Ok((exp_node, pos));
         }
         // exp -> BinExp()
-        //peek next token, if it is lexer::TokType::Plus or lexer::TokType::Minus
+        //peek next token, if it is lexer::Tokens::Plus or lexer::Tokens::Minus
         let mut term_node = term_node;
         let mut pos = pos;
-        while *tok == lexer::TokType::Plus || *tok == lexer::TokType::Minus {
-            let mut binexp_node = ParseNode::new();
-            binexp_node.entry = NodeType::BinExp(match tok {
-                lexer::TokType::Plus => lexer::TokType::Plus,
-                lexer::TokType::Minus => lexer::TokType::Minus,
+        while *tok == lexer::Tokens::Plus || *tok == lexer::Tokens::Minus {
+            let mut binexp_node = Parse::new();
+            binexp_node.entry = Node::BinExp(match tok {
+                lexer::Tokens::Plus => lexer::Tokens::Plus,
+                lexer::Tokens::Minus => lexer::Tokens::Minus,
                 _ => panic!("in parser::p_exp, something went wrong"),
             });
             pos = pos + 1;
@@ -3639,10 +3645,10 @@ pub mod parser
         return Ok((exp_node, pos));
     }
 
-    pub fn parse_prog(input: &str, c_src_name: &str) -> Result<ParseNode, String> {
+    pub fn parse_prog(input: &str, c_src_name: &str) -> Result<Parse, String> {
         let toks = r#try!(lexer::lex(&input));
-        let mut prog_node = ParseNode::new();
-        prog_node.entry = NodeType::Prog(c_src_name.to_string());
+        let mut prog_node = Parse::new();
+        prog_node.entry = Node::Prog(c_src_name.to_string());
         let mut pos = 0;
         // now we need to add support for global variables
         while pos < toks.len() {
@@ -3669,24 +3675,24 @@ pub mod parser
     }
 
     // XXX: should change the return type to Result<String, String> to remove panic!()
-    pub fn print(tree: &ParseNode, idt: usize) -> String {
+    pub fn print(tree: &Parse, idt: usize) -> String {
         let mut idt_prefix = String::new();
         for _i in 0..idt {
             idt_prefix = idt_prefix + " ";
         }
         match &tree.entry {
-            NodeType::StringLiteral(data, tag) => format!(
+            Node::StringLiteral(data, tag) => format!(
                 "{}n_type: StringLiteral, tag: {}, data: [{}]",
                 idt_prefix, tag, data,
             ),
-            NodeType::ArrayRef(var_name) => format!(
+            Node::ArrayRef(var_name) => format!(
                 "{}n_type: ArrayRef, var_name : {}, [\n{}\n{}]",
                 idt_prefix,
                 var_name,
                 print(tree.child.get(0).unwrap(), idt + 1),
                 idt_prefix
             ),
-            NodeType::Factor => format!(
+            Node::Factor => format!(
                 "{}n_type: Factor, [\n{}\n{}]",
                 idt_prefix,
                 print(
@@ -3695,7 +3701,7 @@ pub mod parser
                 ),
                 idt_prefix
             ),
-            NodeType::AssignNode(var_name, flag) => {
+            Node::AssignNode(var_name, flag) => {
                 match flag {
                     false => format!(
                         "{}n_type: AssignNode, Var: {} [\n{}\n{}]",
@@ -3728,22 +3734,22 @@ pub mod parser
                     }
                 }
             }
-            NodeType::BinExp(op) => format!(
+            Node::BinExp(op) => format!(
                 "{}n_type: BinExp, Op: {} [\n{}\n{}\n{}]",
                 idt_prefix,
                 match op {
-                    lexer::TokType::Minus => format!("-"),
-                    lexer::TokType::Plus => format!("+"),
-                    lexer::TokType::Multi => format!("*"),
-                    lexer::TokType::Splash => format!("/"),
-                    lexer::TokType::And => format!("&&"),
-                    lexer::TokType::Or => format!("||"),
-                    lexer::TokType::Equal => format!("=="),
-                    lexer::TokType::NotEqual => format!("!="),
-                    lexer::TokType::GreaterEqual => format!(">="),
-                    lexer::TokType::LessEqual => format!("<="),
-                    lexer::TokType::Lt => format!("<"),
-                    lexer::TokType::Gt => format!(">"),
+                    lexer::Tokens::Minus => format!("-"),
+                    lexer::Tokens::Plus => format!("+"),
+                    lexer::Tokens::Multi => format!("*"),
+                    lexer::Tokens::Splash => format!("/"),
+                    lexer::Tokens::And => format!("&&"),
+                    lexer::Tokens::Or => format!("||"),
+                    lexer::Tokens::Equal => format!("=="),
+                    lexer::Tokens::NotEqual => format!("!="),
+                    lexer::Tokens::GreaterEqual => format!(">="),
+                    lexer::Tokens::LessEqual => format!("<="),
+                    lexer::Tokens::Lt => format!("<"),
+                    lexer::Tokens::Gt => format!(">"),
                     _ => panic!(format!(
                         "Operator `{:?}` for Binary Expression not supported",
                         &op
@@ -3753,13 +3759,13 @@ pub mod parser
                 print(tree.child.get(1).expect("BinExp no rhs"), idt + 1),
                 idt_prefix
             ),
-            NodeType::Term => format!(
+            Node::Term => format!(
                 "{}n_type: Term, [\n{}\n{}]",
                 idt_prefix,
                 print(tree.child.get(0).expect("Term Node has no child"), idt + 1),
                 idt_prefix
             ),
-            NodeType::Prog(prog_name) => {
+            Node::Prog(prog_name) => {
                 let mut prog_body = String::new();
                 for it in tree.child.iter() {
                     prog_body.push_str(&print(it, idt + 1));
@@ -3770,7 +3776,7 @@ pub mod parser
                     idt_prefix, prog_name, prog_body, idt_prefix
                 )
             }
-            NodeType::FnCall(fn_name) => {
+            Node::FnCall(fn_name) => {
                 let mut tmp = String::new();
                 let mut inc = 0;
                 for it in tree.child.iter() {
@@ -3787,7 +3793,7 @@ pub mod parser
                 )
                 // list of exp
             }
-            NodeType::Fn(fn_name, vars) => {
+            Node::Fn(fn_name, vars) => {
                 let mut tmp = String::new();
                 let mut inc = 0;
                 for it in tree.child.iter() {
@@ -3814,7 +3820,7 @@ pub mod parser
                     idt_prefix, fn_name, var_list_string, idt_prefix, tmp, idt_prefix
                 )
             }
-            NodeType::Declare(var_name, t) => match t {
+            Node::Declare(var_name, t) => match t {
                 DataType::I64 => {
                     if tree.child.is_empty() {
                         format!(
@@ -3839,7 +3845,7 @@ pub mod parser
                     idt_prefix, var_name, len,
                 ),
             },
-            NodeType::ConditionalExp => {
+            Node::ConditionalExp => {
                 let mut tmp = String::new();
                 let mut inc = 0;
                 for it in tree.child.iter() {
@@ -3854,7 +3860,7 @@ pub mod parser
                     idt_prefix, tmp, idt_prefix
                 )
             }
-            NodeType::Stmt(stmt) => match stmt {
+            Node::Stmt(stmt) => match stmt {
                 StmtType::For => {
                     let exp_opt_1 = print(tree.child.get(0).expect("No exp1 in for"), idt + 1);
                     let exp_opt_2 = print(tree.child.get(1).expect("No exp2 in for"), idt + 1);
@@ -4002,14 +4008,14 @@ pub mod parser
                     )
                 }
             },
-            NodeType::LogicalOrExp |
-            NodeType::LogicalAndExp|
-            NodeType::EqualityExp  |
-            NodeType::RelationalExp|
-            NodeType::AdditiveExp =>
+            Node::LogicalOrExp |
+            Node::LogicalAndExp|
+            Node::EqualityExp  |
+            Node::RelationalExp|
+            Node::AdditiveExp =>
                 print(tree.child.get(0).expect(&format!("{:?} Node has no child", tree.entry)), idt),
 
-            NodeType::ExpOption => match tree.child.len() {
+            Node::ExpOption => match tree.child.len() {
                 0 => format!("{}n_type: ExpOption", idt_prefix),
                 1 => format!(
                     "{}n_type: ExpOption, [\n{}\n{}]",
@@ -4022,7 +4028,7 @@ pub mod parser
                     tree.child.len()
                 )),
             },
-            NodeType::Exp => format!(
+            Node::Exp => format!(
                 "{}n_type: Exp, [\n{}\n{}]",
                 idt_prefix,
                 print(
@@ -4031,20 +4037,20 @@ pub mod parser
                 ),
                 idt_prefix
             ),
-            NodeType::Block => format!(
+            Node::Block => format!(
                 "{}n_type: Block, [\n{}\n{}]",
                 idt_prefix,
                 print(tree.child.get(0).expect("Block node has no child"), idt + 1),
                 idt_prefix
             ),
-            NodeType::UnExp(Op) => format!(
+            Node::UnExp(Op) => format!(
                 "{}n_type: UnExp, Op: {}, [\n{}\n{}]",
                 idt_prefix,
                 match Op {
-                    lexer::TokType::Minus => "-".to_string(),
-                    lexer::TokType::Tilde => "~".to_string(),
-                    lexer::TokType::Exclamation => "!".to_string(),
-                    lexer::TokType::Addr => "&".to_string(),
+                    lexer::Tokens::Minus => "-".to_string(),
+                    lexer::Tokens::Tilde => "~".to_string(),
+                    lexer::Tokens::Exclamation => "!".to_string(),
+                    lexer::Tokens::Addr => "&".to_string(),
                     _ => panic!("Operator for Unary Expression not supported"),
                 },
                 print(
@@ -4055,8 +4061,8 @@ pub mod parser
                 ),
                 idt_prefix
             ),
-            NodeType::Var(var_name) => format!("{}n_type, Variable, Name : {}", idt_prefix, var_name),
-            NodeType::Const(n) => format!("{}n_type: Const, Value: {}", idt_prefix, n),
+            Node::Var(var_name) => format!("{}n_type, Variable, Name : {}", idt_prefix, var_name),
+            Node::Const(n) => format!("{}n_type: Const, Value: {}", idt_prefix, n),
             _ => panic!(format!(
                 "in parser::print, {:?} Node type not implemented",
                 &tree.entry
@@ -4116,4 +4122,4 @@ pub fn main() ->  Result<(), Box<dyn error::Error>>
         Ok(())
     }
 }
-// 4119 /////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// 4125 /////////////////////////////////////////////////////////////////////////////////////////////////////////////
