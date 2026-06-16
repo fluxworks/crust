@@ -31,7 +31,7 @@ pub mod __
 {
     /*!
     */
-    use ::
+    use crate::
     {
         *,
     };
@@ -74,7 +74,7 @@ pub mod examples
 {
     /*!
     */
-    use ::
+    use crate::
     {
         *,
     };
@@ -84,7 +84,7 @@ pub mod examples
     {
         /*!
         */
-        use ::
+        use crate::
         {
             *,
         };
@@ -94,7 +94,7 @@ pub mod examples
         {
             /*!
             */
-            use ::
+            use crate::
             {
                 *,
             };
@@ -106,7 +106,7 @@ pub mod examples
         {
             /*!
             */
-            use ::
+            use crate::
             {
                 *,
             };
@@ -163,11 +163,11 @@ pub mod fs
     pub use std::fs::{ * };
 }
 
-pub mod gen
+pub mod generates
 {
     /*!
     */
-    use ::
+    use crate::
     {
         collections::{HashMap, HashSet},
         lexer::{ Tokens },
@@ -309,7 +309,7 @@ pub mod gen
                             return 0;
                         }
                     }
-                    _ => panic!("{:?} should not occur in global variable initialization"),
+                    exception => panic!("{:?} should not occur in global variable initialization", exception),
                 }
             }
             Node::UnExp(op) => {
@@ -2017,7 +2017,7 @@ pub mod lexer
 {
     /*!
     */
-    use ::
+    use crate::
     {
         *,
     };
@@ -2453,7 +2453,7 @@ pub mod opts
 {
     /*!
     */
-    use ::
+    use crate::
     {
         *,
     };
@@ -2463,7 +2463,7 @@ pub mod opts
     {
         /*!
         */
-        use ::
+        use crate::
         {
             *,
         };
@@ -2566,7 +2566,7 @@ pub mod parser
 {
     /*!
     */
-    use ::
+    use crate::
     {
         *,
     };
