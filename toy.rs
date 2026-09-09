@@ -372,33 +372,42 @@ pub mod generates
                     global_variable_scope.insert(var_name.to_string());
                     prog_body.push_str(&format!("{}.comm {}, {}, 32\n", p, var_name, len * 8));
                 }
-                Node::Fn(fn_name, var_list_opt) => {
+
+                Node::Fn(fn_name, var_list_opt) =>
+                {
                     let fn_prologue = gen_fn_prologue(fn_name);
                     let fn_epilogue = gen_fn_epilogue();
-
-
                     let call_by_function = true;
                     let mut index_map: HashMap<String, isize> = HashMap::new();
                     let mut scope: HashMap<String, bool> = HashMap::new();
-                    match var_list_opt {
-                        Some(var_list) => {
+                    
+                    match var_list_opt
+                    {
+                        Some(var_list) =>
+                        {
                             let mut param_offset = 16 + (var_list.len() as isize - 6 - 1) * 8;
-                            for i in 0..var_list.len() {
+                            
+                            for i in 0..var_list.len()
+                            {
                                 scope.insert(var_list[i].to_string(), true);
-                                if i >= 6 {
-
+                                if i >= 6
+                                {
                                     index_map.insert(var_list[i].to_string(), param_offset);
                                     param_offset -= 8;
-                                } else {
-
-
+                                }
+                                
+                                else
+                                {
                                     index_map.insert(var_list[i].to_string(), -(i as isize + 1) * 8);
                                 }
                             }
                         }
+
                         None => {}
                     }
-                    let fn_body = &gen_block(
+
+                    let fn_body = &gen_block
+                    (
                         it,
                         &index_map,
                         &scope,
@@ -410,8 +419,10 @@ pub mod generates
                         &global_variable_scope,
                     );
 
-                    let tmp = if FLAG_FOR_MAIN_HAS_RET.load(atomic::Ordering::SeqCst) == false {
-                        format!(
+                    let tmp = if FLAG_FOR_MAIN_HAS_RET.load(atomic::Ordering::SeqCst) == false
+                    {
+                        format!
+                        (
                             "{}movq $0, %rax\n\
                             {}\
                             {}ret\n",
@@ -419,10 +430,12 @@ pub mod generates
                             gen_fn_epilogue(),
                             p
                         )
-                    } else {
-                        "".to_string()
-                    };
-                    let fn_tot = format!(
+                    }
+
+                    else { "".to_string() };
+                    
+                    let fn_tot = format!
+                    (
                         "{}\
                         {}\
                         {}\
@@ -440,14 +453,18 @@ pub mod generates
                         fn_name,
                         fn_name
                     );
+                    
                     prog_body.push_str(&fn_tot);
                 }
+
                 _ => panic!("`{:?}` type should not be here", it.entry),
             }
         }
 
-        match &tree.entry {
-            Node::Prog(prog_name) => format!(
+        match &tree.entry
+        {
+            Node::Prog(prog_name) => format!
+            (
                 "{}.file \"{}\"\n\
                 {}\
                 {}.ident	\"crust: 0.1 (By Haoran Wang)\"\n\
@@ -471,25 +488,31 @@ pub mod generates
         global_variable_scope: &HashSet<String>,
     ) -> (HashMap<String, isize>, HashMap<String, bool>, isize, String) 
     {
-
         let p = "        ";
         let mut index_map = index_map.clone();
         let mut scope = scope.clone();
         let mut idx = idx;
-        match &tree.entry {
-            Node::Declare(var_name, data_type) => {
+        
+        match &tree.entry
+        {
+            Node::Declare(var_name, data_type) =>
+            {
                 let get_opt = scope.get(var_name);
-                match get_opt {
-                    Some(flag) => {
-                        match flag {
-                            true => {
-
+                match get_opt
+                {
+                    Some(flag) =>
+                    {
+                        match flag
+                        {
+                            true =>
+                            {
                                 scope.insert(var_name.to_string(), false);
-
-                                index_map.insert(var_name.to_string(), idx - 8);
+                                 index_map.insert(var_name.to_string(), idx - 8);
                                 idx -= 8;
                             }
-                            false => {
+
+                            false =>
+                            {
                                 panic!(
                                     "Error: redeclaration of variable `{}` in the same scope",
                                     var_name
@@ -497,26 +520,25 @@ pub mod generates
                             }
                         }
                     }
-                    None => {
 
+                    None =>
+                    {
                         scope.insert(var_name.to_string(), false);
-
                         index_map.insert(var_name.to_string(), idx - 8);
                         idx -= 8;
                     }
                 }
-
-
+                
                 let mut e1 = String::new();
 
-                if tree.child.is_empty() {
-
-                    e1 = format!("        movq $0, %rax\n");
-                } else {
-                    e1 = gen_stmt(
+                if tree.child.is_empty() { e1 = format!("        movq $0, %rax\n"); }
+                else
+                {
+                    e1 = gen_stmt
+                    (
                         tree.child
-                            .get(0)
-                            .expect("Statement::Declare Node has no child"),
+                        .get(0)
+                        .expect("Statement::Declare Node has no child"),
                         &index_map,
                         idx,
                         lbb,
@@ -526,34 +548,41 @@ pub mod generates
                         &global_variable_scope,
                     );
                 }
-                let s = format!(
+
+                let s = format!
+                (
                     "{}\
                     {}pushq %rax # gen_declare\n",
                     e1, p
                 );
+
                 (index_map, scope, idx, s)
             }
             _ => panic!("Type `{:?}` should not occur here", tree.entry),
         }
     }
 
-    pub fn gen_for(
+    pub fn gen_for
+    (
         tree: &Parse,
         index_map: &HashMap<String, isize>,
         idx: isize,
         global_variable_scope: &HashSet<String>,
-    ) -> String {
+    ) -> String
+    {
         let p = "        ".to_string();
         let label_begin_loop = gen_labels("BFOR");
         let label_end_loop = gen_labels("EFOR");
-
         let mut index_map = index_map.clone();
         let mut idx: isize = idx;
-
         let mut scope: HashMap<String, bool> = HashMap::new();
-        match tree.entry {
-            Node::Stmt(Statement::ForDecl) => {
-                let (index_map_new, scope_new, idx_new, init) = gen_declare(
+        
+        match tree.entry
+        {
+            Node::Stmt(Statement::ForDecl) =>
+            {
+                let (index_map_new, scope_new, idx_new, init) = gen_declare
+                (
                     tree.child.get(0).unwrap(),
                     &index_map,
                     &scope,
@@ -564,10 +593,12 @@ pub mod generates
                     Some(&label_end_loop),
                     &global_variable_scope,
                 );
+
                 index_map = index_map_new.clone();
                 idx = idx_new;
                 scope = scope_new.clone();
-                let condition = gen_stmt(
+                let condition = gen_stmt
+                (
                     tree.child.get(1).unwrap(),
                     &index_map,
                     idx,
@@ -577,7 +608,9 @@ pub mod generates
                     Some(&label_end_loop),
                     &global_variable_scope,
                 );
-                let post_exp = gen_stmt(
+                
+                let post_exp = gen_stmt
+                (
                     tree.child.get(2).unwrap(),
                     &index_map,
                     idx,
@@ -587,7 +620,9 @@ pub mod generates
                     Some(&label_end_loop),
                     &global_variable_scope,
                 );
-                let stmt = gen_block(
+                
+                let stmt = gen_block
+                (
                     tree.child.get(3).unwrap(),
                     &index_map,
                     &scope,
@@ -598,26 +633,17 @@ pub mod generates
                     false,
                     &global_variable_scope,
                 );
-
-
-
-
-
-
-
-
-
-                //let deblock = 8 * scope.len();
+                
+                let deblock = 8 * scope.len();
                 let mut deblock = 0;
                 
                 for (_, val) in scope.iter()
                 {
-                    if *val == false {
-                        deblock += 8;
-                    }
+                    if *val == false { deblock += 8; }
                 }
 
-                format!(
+                format!
+                (
                     "{}\
                     {}:\n\
                     {}\
@@ -643,8 +669,11 @@ pub mod generates
                     deblock
                 )
             }
-            Node::Stmt(Statement::For) => {
-                let init = gen_stmt(
+
+            Node::Stmt(Statement::For) =>
+            {
+                let init = gen_stmt
+                (
                     tree.child.get(0).unwrap(),
                     &index_map,
                     idx,
@@ -654,7 +683,9 @@ pub mod generates
                     Some(&label_end_loop),
                     &global_variable_scope,
                 );
-                let condition = gen_stmt(
+
+                let condition = gen_stmt
+                (
                     tree.child.get(1).unwrap(),
                     &index_map,
                     idx,
@@ -664,7 +695,9 @@ pub mod generates
                     Some(&label_end_loop),
                     &global_variable_scope,
                 );
-                let post_exp = gen_stmt(
+
+                let post_exp = gen_stmt
+                (
                     tree.child.get(2).unwrap(),
                     &index_map,
                     idx,
@@ -674,7 +707,9 @@ pub mod generates
                     Some(&label_end_loop),
                     &global_variable_scope,
                 );
-                let stmt = gen_block(
+                
+                let stmt = gen_block
+                (
                     tree.child.get(3).unwrap(),
                     &index_map,
                     &scope,
@@ -685,23 +720,16 @@ pub mod generates
                     false,
                     &global_variable_scope,
                 );
-
-
-
-
-
-
-
-
-
-
+                
                 let mut deblock = 0;
-                for (_, val) in scope.iter() {
-                    if *val == false {
-                        deblock += 8;
-                    }
+                
+                for (_, val) in scope.iter()
+                {
+                    if *val == false { deblock += 8; }
                 }
-                format!(
+
+                format!
+                (
                     "{}\
                     {}:\n\
                     {}\
@@ -731,7 +759,8 @@ pub mod generates
         }
     }
 
-    pub fn gen_block(
+    pub fn gen_block
+    (
         tree: &Parse,
         index_map: &HashMap<String, isize>,
         scope: &HashMap<String, bool>,
@@ -741,28 +770,32 @@ pub mod generates
         flag: bool,
         fn_def: bool,
         global_variable_scope: &HashSet<String>,
-    ) -> String {
+    ) -> String 
+    {
         let p = "        ".to_string();
         let label_begin_block = gen_labels("BB");
         let label_end_block = gen_labels("EB");
-
         let mut stmts = String::new();
         let mut index_map = index_map.clone();
         let mut idx: isize = idx;
         let mut current_scope: HashMap<String, bool> = scope.clone();
-        if fn_def == false {
-            current_scope = HashMap::new();
-        } else {
-
-
-
+        
+        if fn_def == false { current_scope = HashMap::new(); }
+        else
+        {
             let regs: Vec<&'static str> = vec!["%rdi", "%rsi", "%rdx", "%rcx", "%r8", "%r9"];
-            if current_scope.len() > 6 {
-                for i in 0..6 {
+            
+            if current_scope.len() > 6
+            {
+                for i in 0..6
+                {
                     stmts.push_str(&format!("{}pushq {}\n", p, regs[i]));
                 }
-            } else {
-                for i in 0..current_scope.len() {
+            }
+            else
+            {
+                for i in 0..current_scope.len()
+                {
                     stmts.push_str(&format!("{}pushq {}\n", p, regs[i]));
                 }
             }
@@ -770,10 +803,12 @@ pub mod generates
 
         }
 
-        for it in &tree.child {
-
-            match &it.entry {
-                Node::Declare(_var_name, Data::I64) => {
+        for it in &tree.child
+        {
+            match &it.entry
+            {
+                Node::Declare(_var_name, Data::I64) =>
+                {
                     let (index_map_new, scope_new, idx_new, s) = gen_declare(
                         it,
                         &index_map,
